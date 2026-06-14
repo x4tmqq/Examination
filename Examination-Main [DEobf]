@@ -309,7 +309,7 @@ local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/
 
 local Window = Fluent:CreateWindow({
     Title = "Sentinel - Examination",
-    SubTitle = " | version : 7.00.00",
+    SubTitle = " | version : 4.00.00",
     TabWidth = 160,
     Size = UDim2.fromOffset(520, 420),
     Acrylic = true,
