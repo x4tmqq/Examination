@@ -309,7 +309,7 @@ local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/
 
 local Window = Fluent:CreateWindow({
     Title = "Sentinel - Examination",
-    SubTitle = " | version : 5.00.00",
+    SubTitle = " | version : 0.27.42",
     TabWidth = 160,
     Size = UDim2.fromOffset(520, 420),
     Acrylic = true,
@@ -1153,7 +1153,7 @@ DevPanelsSection:AddToggle("ShowCoords", { Title = "Show Coordinates", Default =
 
 local AboutSection = Tabs.About:AddSection("Credits & Links")
 AboutSection:AddButton({ Title = "Copy Discord Server Link", Callback = function()
-    local link = "https://discord.gg/WmYfXjf45"
+    local link = "https://discord.gg/gtFdtYSG"
     if setclipboard then setclipboard(link)
     else pcall(function() local tb = Instance.new("TextBox"); tb.Text = link; tb:CaptureFocus(); tb:ReleaseFocus(); tb:Destroy() end) end
     Fluent:Notify({ Title = "Discord", Content = "Discord server link copied!", Duration = 3 })
