@@ -1,11 +1,18 @@
-local Workspace = game:GetService("Workspace")
+--[[
+  Sentinel - Examination
+  Version : 4.00.00
+  Ajout : Fake Infection (Controllable / Non Controllable) – AUCUNE SIMPLIFICATION
+]]
+
+-- ===================== SERVICES =====================
 local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
-local RunService = game:GetService("RunService")
 local Lighting = game:GetService("Lighting")
-local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
+local LocalPlayer = Players.LocalPlayer
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 local MarketplaceService = game:GetService("MarketplaceService")
 local Debris = game:GetService("Debris")
 local SoundService = game:GetService("SoundService")
@@ -13,7 +20,9 @@ local StarterGui = game:GetService("StarterGui")
 local Camera = workspace.CurrentCamera
 local TextChatService = game:GetService("TextChatService")
 local CoreGui = game:GetService("CoreGui")
+local Teams = game:GetService("Teams")
 
+-- ===================== UTILITAIRES =====================
 local function isPlayerCharacter(model)
     if not model or not model:IsA("Model") then return false end
     return Players:GetPlayerFromCharacter(model) ~= nil
@@ -47,17 +56,527 @@ if LocalPlayer.Character then
     hideLocalHead()
 end
 
+-- ===================== CONFIG =====================
+local Config = {
+    SpeedHackEnabled = false,
+    WalkSpeedValue = 16,
+    InfiniteStaminaEnabled = false,
+    JumpPowerEnabled = false,
+    JumpPowerValue = 50,
+    InfiniteJump = false,
+    JumpBypassActive = false,
+    FlyEnabled = false,
+    FlySpeed = 50,
+    FlyType = "CFrame",
+    NoclipEnabled = false,
+    AutoWipeBlood = false,
+    ShowCoordinates = false,
+    ShowDebugPanel = false,
+    GAttackEnabled = false,
+    BypassCombatCooldowns = false,
+    AutoSpamAttack = false,
+    AntiCamShake = false,
+    ImmuneLookHazard = false,
+    HighlightPlayer = false,
+    HighlightFriends = false,
+    HighlightMobs = false,
+    HealthPlayer = false,
+    HealthFriends = false,
+    HealthMobs = false,
+    TracerPlayer = false,
+    TracerFriends = false,
+    TracerMobs = false,
+    ColorPlayer = Color3.fromRGB(100, 200, 255),
+    ColorFriends = Color3.fromRGB(100, 255, 100),
+    ColorMobs = Color3.fromRGB(255, 100, 100),
+    MaxDistance = 1000,
+    HLFillTrans = 0.7,
+    HLOutlineTrans = 1.0,
+    FullBright = false,
+    Xray = false,
+    XrayDistance = 200,
+    NoFog = false,
+    UnlockThirdPerson = false,
+    FakeDeath = false,
+    FakeInjured = false,
+    InfiniteNightVision = false,
+    AimlockEnabled = false,
+    WallCheck = true,
+    FOVCircleSize = 150,
+    LockPower = 50,
+    BodyPartLock = "Head",
+    SilencerEnabled = false,
+    CharacterName = "",
+    CharacterRank = "",
+    TagColor = Color3.fromRGB(80, 109, 84),
+    Team = "Menlo",
+    StaggerEnabled = true,
+    InfectionMode = "Non Controllable",
+}
+
+local ValidCombatTools = {
+    ["MPV-9"] = true, ["Mossberg 590A1"] = true, ["Beanbag Shotgun"] = true, ["VGS-9"] = true,
+    ["Lock-17 [F]"] = true, ["MPV-SD"] = true, ["IA AR-56"] = true, ["AR-18 'Standard'"] = true,
+    ["AR-21"] = true, R8 = true, RPK = true, RPD = true, ["P95 'Knight'"] = true,
+    ["A9 Brigadier [F]"] = true, ["SMX-9"] = true, ["PMS-12T 'Hammer' [S]"] = true, ["Lock-17"] = true,
+    ["AR-19"] = true, ["Lock-17 [S]"] = true, ["Lock-18"] = true, ["A9 Brigadier"] = true,
+    ["VGS-45 'Striker'"] = true, ["AR-19 'Phantom''"] = true, ["Arcturus .50"] = true,
+    ["Tursk R-12 'Breakstorm'"] = true, ["MPV-9x19"] = true, ["MPV-9x19 [S]"] = true, ["K7 'Tempest'"] = true,
+    ["AR-19 'Phantom'"] = true, M16A2 = true, ["Glock-18"] = true, ["AKS-74u"] = true,
+    ["SRS-58"] = true, ["F7 Lynx"] = true, ["SHC-23"] = true, ["IB-5 Carcara"] = true,
+    ["AEN-50"] = true, ["VGS-45"] = true, ["PMS-12T 'Hammer'"] = true, ["AK-74M (Bayonet)"] = true,
+    ["Night Stalker"] = true, M249 = true, ["AR-23"] = true, ["AK-74"] = true
+}
+
+local WeaponAnimations = {
+    ["MPV-9"] = "rbxassetid://132986160862388", ["SMX-9"] = "rbxassetid://132986160862388",
+    ["MPV-9x19"] = "rbxassetid://132986160862388", ["MPV-SD"] = "rbxassetid://84050213985015",
+    ["AR-18 'Standard'"] = "rbxassetid://132986160862388", ["VGS-45 'Striker'"] = "rbxassetid://119099679349414",
+    ["P95 'Knight'"] = "rbxassetid://119099679349414", ["AR-19"] = "rbxassetid://132986160862388",
+    M16A2 = "rbxassetid://132986160862388", ["A9 Brigadier"] = "rbxassetid://74792106188393",
+    ["A9 Brigadier [F]"] = "rbxassetid://74792106188393", ["Lock-17"] = "rbxassetid://74792106188393",
+    ["Tursk R-12 'Breakstorm'"] = "rbxassetid://74792106188393", ["Lock-17 [S]"] = "rbxassetid://74792106188393",
+    ["MPV-9x19 [S]"] = "rbxassetid://76929295689492", ["AR-21"] = "rbxassetid://76929295689492",
+    ["IB-5 Carcara"] = "rbxassetid://76929295689492", ["IA AR-56"] = "rbxassetid://116750283539846",
+    ["AEN-50"] = "rbxassetid://76929295689492", RPD = "rbxassetid://76929295689492",
+    RPK = "rbxassetid://76929295689492", ["AK-74"] = "rbxassetid://76929295689492",
+    ["Arcturus .50"] = "rbxassetid://74792106188393", ["F7 Lynx"] = "rbxassetid://74792106188393",
+    ["Glock-19 [S]"] = "rbxassetid://74792106188393", ["Glock-18"] = "rbxassetid://74792106188393",
+    ["AR-19 'Phantom'"] = "rbxassetid://70983687392228", ["AK-74M (Bayonet)"] = "rbxassetid://116750283539846",
+    ["Night Stalker"] = "rbxassetid://114744562625259", ["PMS-12T 'Hammer'"] = "rbxassetid://119099679349414",
+    ["SRS-58"] = "rbxassetid://119099679349414", ["SHC-23"] = "rbxassetid://97981174560418",
+    Default = "rbxassetid://74792106188393"
+}
+
+-- ===================== VARIABLES GLOBALES =====================
 local HitboxEnabled = false
 local HitboxModifiedHeads = {}
+local flyBV, flyBG, flySeat, flyWeld, flyActive = nil, nil, nil, nil, false
+local CurrentFlyType = "CFrame"
+local FlySpeed = 50
+local testerCFGui, testerCFLabel, testerDebugGui, testerDebugPanel
+local debugLabelsCache = {}
+local savedHipHeight = 2
+local CurrentAnimTrack = nil
+local LastAttackTick = 0
+local LastSpecialAttackTick = 0
+local IsSpecialAttackActive = false
+local CooldownCounter = 0
+local CooldownData = { Bash = nil, Kick = nil }
+local ActiveTweens = {}
+local CachedMobs = {}
+local tracerCache = {}
+local OrigAmbient = Lighting.Ambient
+local OrigOutdoorAmbient = Lighting.OutdoorAmbient
+local OrigBrightness = Lighting.Brightness
+local OrigFogEnd = Lighting.FogEnd
+local OrigFogStart = Lighting.FogStart
+local OrigTimeOfDay = Lighting.TimeOfDay
 
+local FakeDeathAnimTrack = nil
+local FakeInjuredTrack = nil
+local FakeInfectionExecuted = false
+local InfectionAvailable = true
+
+local InfiniteNVConnection = nil
+local NVForcerConnection = nil
+
+local isShiftHeld = false
+
+local CurrentTarget = nil
+local FOVCircle = nil
+
+local AutoShieldRemovalActive = false
+local AutoShieldRemovalConnection = nil
+
+local NeckSnapEvent = ReplicatedStorage:WaitForChild("NeckSnapEvent")
+local BashCooldownUI = ReplicatedStorage:WaitForChild("BashCooldownUI")
+local PunchEvent = ReplicatedStorage:FindFirstChild("PunchEvent")
+
+local gameAee = Lighting:FindFirstChild("aee")
+local gameRadiationTint = Lighting:FindFirstChild("RadiationTint")
+
+-- ===================== INFECTION SPECIFICS =====================
+local InfectionActive = false
+local InfectionMode = "Non Controllable"
+local InfectionCleanupFunctions = {}
+
+local function BreakGasmask()
+    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+    if not playerGui then return false end
+    local gasmaskGui = playerGui:FindFirstChild("Gasmask")
+    if not gasmaskGui then return false end
+    local maskHole = gasmaskGui:FindFirstChild("MaskHole")
+    local glass = gasmaskGui:FindFirstChild("Glass")
+    if maskHole then
+        if maskHole:IsA("ImageLabel") then
+            maskHole.ImageTransparency = 0
+            maskHole.Visible = true
+        elseif maskHole:IsA("Frame") then
+            maskHole.Visible = true
+            for _, child in pairs(maskHole:GetDescendants()) do
+                if child:IsA("ImageLabel") then
+                    child.ImageTransparency = 0
+                    child.Visible = true
+                end
+            end
+        end
+    end
+    local crackSound = Instance.new("Sound")
+    crackSound.SoundId = "rbxassetid://632831227"
+    crackSound.Volume = 1
+    crackSound.Parent = gasmaskGui
+    crackSound:Play()
+    Debris:AddItem(crackSound, 3)
+    if glass and glass:IsA("ImageLabel") then
+        local originalTransparency = glass.ImageTransparency
+        TweenService:Create(glass, TweenInfo.new(0.1), { ImageTransparency = 0.5 }):Play()
+        task.wait(0.05)
+        TweenService:Create(glass, TweenInfo.new(0.5), { ImageTransparency = originalTransparency }):Play()
+    end
+    return true
+end
+
+local function showBloodVignette(show)
+    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+    if not playerGui then return end
+    local gui = playerGui:FindFirstChild("Gui")
+    if not gui then return end
+    local blood = gui:FindFirstChild("blood-vignette")
+    if blood and blood:IsA("ImageLabel") then
+        blood.Visible = show
+        if show then
+            blood.ImageTransparency = 0
+        else
+            blood.ImageTransparency = 1
+        end
+    end
+end
+
+local function createRedTint()
+    local cc = Lighting:FindFirstChild("InfectionRedTint")
+    if not cc then
+        cc = Instance.new("ColorCorrectionEffect")
+        cc.Name = "InfectionRedTint"
+        cc.Parent = Lighting
+    end
+    return cc
+end
+
+local function playAnimationOnHumanoid(animId, looped, callback)
+    local char = LocalPlayer.Character
+    if not char then return nil end
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return nil end
+    local animator = humanoid:FindFirstChildOfClass("Animator") or Instance.new("Animator", humanoid)
+    local anim = Instance.new("Animation")
+    anim.AnimationId = animId
+    local track = animator:LoadAnimation(anim)
+    track.Looped = looped or false
+    track:Play()
+    if callback then
+        track.Stopped:Connect(callback)
+    end
+    return track
+end
+
+local demonicChars = {
+    "\206\169", "\208\150", "\206\168", "\226\137\160", "\206\163", "\194\181",
+    "\226\136\130", "\195\184", "\207\128", "\194\167", "\210\130", "\207\158",
+    "\210\150", "\210\168", "?", "!"
+}
+
+local function spawnDemonicSymbol(mass)
+    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+    if not playerGui then return end
+    local infectionEffectsGui = playerGui:FindFirstChild("InfectionEffectsGui")
+    if not infectionEffectsGui then
+        infectionEffectsGui = Instance.new("ScreenGui")
+        infectionEffectsGui.Name = "InfectionEffectsGui"
+        infectionEffectsGui.ResetOnSpawn = false
+        infectionEffectsGui.IgnoreGuiInset = true
+        infectionEffectsGui.Parent = playerGui
+    end
+
+    local count = mass and 3 or 1
+    for _ = 1, count do
+        local label = Instance.new("TextLabel")
+        label.Text = demonicChars[math.random(1, #demonicChars)]
+        label.TextColor3 = Color3.fromRGB(255, 100, 100)
+        label.Font = Enum.Font.Code
+        label.TextSize = math.random(70, 80)
+        label.BackgroundTransparency = 1
+        label.Size = UDim2.new(0, 60, 0, 60)
+        label.Position = UDim2.new(math.random(), 0, 1, 0)
+        label.AnchorPoint = Vector2.new(0.5, 1)
+        label.Parent = infectionEffectsGui
+
+        local endY = 0.1 + math.random() * 0.1
+        local tween = TweenService:Create(label, TweenInfo.new(2.5, Enum.EasingStyle.Linear, Enum.EasingDirection.Out), {
+            TextTransparency = 1,
+            Position = UDim2.new(label.Position.X.Scale, 0, endY, 0)
+        })
+        tween:Play()
+        tween.Completed:Connect(function()
+            label:Destroy()
+        end)
+    end
+end
+
+local function stopInfection()
+    InfectionActive = false
+    showBloodVignette(false)
+    local cc = Lighting:FindFirstChild("InfectionRedTint")
+    if cc then cc:Destroy() end
+    local effectsGui = LocalPlayer.PlayerGui:FindFirstChild("InfectionEffectsGui")
+    if effectsGui then effectsGui:Destroy() end
+    if InfectionCleanupFunctions then
+        for _, func in ipairs(InfectionCleanupFunctions) do
+            pcall(func)
+        end
+        InfectionCleanupFunctions = {}
+    end
+    local char = LocalPlayer.Character
+    if char then
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            local animator = hum:FindFirstChildOfClass("Animator")
+            if animator then
+                for _, track in pairs(animator:GetPlayingAnimationTracks()) do
+                    track:Stop()
+                end
+            end
+        end
+        local clientScripts = char:FindFirstChild("ClientScripts")
+        if clientScripts then
+            local stagger = clientScripts:FindFirstChild("Stagger")
+            if stagger then stagger.Disabled = not Config.StaggerEnabled end
+        end
+    end
+end
+
+local function startInfectionSequence()
+    if InfectionActive then return end
+    InfectionActive = true
+    InfectionMode = Config.InfectionMode or "Non Controllable"
+
+    BreakGasmask()
+    showBloodVignette(true)
+
+    local redTint = createRedTint()
+    redTint.TintColor = Color3.fromRGB(255, 255, 255)
+
+    local char = LocalPlayer.Character
+    if not char then InfectionActive = false return end
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not humanoid then InfectionActive = false return end
+
+    local isRunning = true
+    local headShakeTrack = nil
+    local injuredTrack = nil
+    local coughTrack = nil
+    local turnTrack = nil
+    local lurkerTrack = nil
+    local infectionFallTrack = nil
+    local suicideTrack = nil
+    local idleTrack = nil
+    local walkTrack = nil
+    local runTrack = nil
+
+    local function cleanup()
+        isRunning = false
+        InfectionActive = false
+        if headShakeTrack then headShakeTrack:Stop(); headShakeTrack = nil end
+        if injuredTrack then injuredTrack:Stop(); injuredTrack = nil end
+        if coughTrack then coughTrack:Stop(); coughTrack = nil end
+        if turnTrack then turnTrack:Stop(); turnTrack = nil end
+        if lurkerTrack then lurkerTrack:Stop(); lurkerTrack = nil end
+        if infectionFallTrack then infectionFallTrack:Stop(); infectionFallTrack = nil end
+        if suicideTrack then suicideTrack:Stop(); suicideTrack = nil end
+        if idleTrack then idleTrack:Stop(); idleTrack = nil end
+        if walkTrack then walkTrack:Stop(); walkTrack = nil end
+        if runTrack then runTrack:Stop(); runTrack = nil end
+        showBloodVignette(false)
+        local cc = Lighting:FindFirstChild("InfectionRedTint")
+        if cc then cc:Destroy() end
+        local effectsGui = LocalPlayer.PlayerGui:FindFirstChild("InfectionEffectsGui")
+        if effectsGui then effectsGui:Destroy() end
+        local clientScripts = char and char:FindFirstChild("ClientScripts")
+        if clientScripts then
+            local stagger = clientScripts:FindFirstChild("Stagger")
+            if stagger then stagger.Disabled = not Config.StaggerEnabled end
+        end
+        if humanoid then
+            local animator = humanoid:FindFirstChildOfClass("Animator")
+            if animator then
+                for _, track in pairs(animator:GetPlayingAnimationTracks()) do
+                    track:Stop()
+                end
+            end
+        end
+    end
+
+    table.insert(InfectionCleanupFunctions, cleanup)
+
+    task.spawn(function()
+        task.wait(0.5)
+
+        headShakeTrack = playAnimationOnHumanoid("rbxassetid://118621065272904", true)
+
+        local injuredRunning = true
+        local function updateIdleAnimation()
+            while injuredRunning and humanoid and humanoid.Health > 0 do
+                local hrp = char:FindFirstChild("HumanoidRootPart")
+                local velocity = hrp and hrp.Velocity or Vector3.new()
+                local horizontalVel = Vector3.new(velocity.X, 0, velocity.Z)
+                local isIdle = horizontalVel.Magnitude < 0.5 and humanoid:GetState() ~= Enum.HumanoidStateType.Jumping and humanoid:GetState() ~= Enum.HumanoidStateType.Freefall
+                if isIdle then
+                    if not injuredTrack or not injuredTrack.IsPlaying then
+                        if injuredTrack then injuredTrack:Stop() end
+                        injuredTrack = playAnimationOnHumanoid("rbxassetid://94302036679429", true)
+                    end
+                else
+                    if injuredTrack and injuredTrack.IsPlaying then
+                        injuredTrack:Stop()
+                        injuredTrack = nil
+                    end
+                end
+                task.wait(0.2)
+            end
+        end
+        task.spawn(updateIdleAnimation)
+
+        local coughDuration = (InfectionMode == "Non Controllable") and 60 or 75
+        local coughEndTime = tick() + coughDuration
+        local function coughLoop()
+            while tick() < coughEndTime and humanoid and humanoid.Health > 0 and isRunning do
+                task.wait(15)
+                if not isRunning or not humanoid or humanoid.Health <= 0 then break end
+                if coughTrack then coughTrack:Stop() end
+                coughTrack = playAnimationOnHumanoid("rbxassetid://111615919261340", false)
+            end
+        end
+        task.spawn(coughLoop)
+
+        local startTime = tick()
+
+        local function demonicAndRedLoop()
+            local redStart = 45
+            local demonStart = 45
+            local demonInterval = (InfectionMode == "Non Controllable") and 1.5 or 4
+            local demonMass = (InfectionMode == "Non Controllable")
+
+            while isRunning and humanoid and humanoid.Health > 0 do
+                local elapsed = tick() - startTime
+                if elapsed >= redStart then
+                    local progress = math.min((elapsed - redStart) / 30, 1)
+                    redTint.TintColor = Color3.fromRGB(255, 255 - math.floor(progress * 255), 255 - math.floor(progress * 255))
+                end
+                if elapsed >= demonStart then
+                    spawnDemonicSymbol(demonMass)
+                end
+                task.wait(demonInterval)
+            end
+        end
+        task.spawn(demonicAndRedLoop)
+
+        if InfectionMode == "Non Controllable" then
+            task.wait(75)
+            if not isRunning or not humanoid or humanoid.Health <= 0 then cleanup() return end
+            infectionFallTrack = playAnimationOnHumanoid("rbxassetid://99985127815659", false, function()
+                if isRunning then
+                    local head = char:FindFirstChild("Head")
+                    if head then
+                        head:Destroy()
+                    end
+                    humanoid.Health = 0
+                    cleanup()
+                end
+            end)
+        else
+            task.wait(45)
+            if not isRunning or not humanoid or humanoid.Health <= 0 then cleanup() return end
+            turnTrack = playAnimationOnHumanoid("rbxassetid://136775254837264", false, function()
+                local sound = Instance.new("Sound")
+                sound.SoundId = "rbxassetid://124481386119913"
+                sound.Volume = 1
+                sound.Parent = char
+                sound:Play()
+                Debris:AddItem(sound, 5)
+
+                task.wait(2)
+                if not isRunning or not humanoid or humanoid.Health <= 0 then cleanup() return end
+                lurkerTrack = playAnimationOnHumanoid("rbxassetid://138937044212276", false, function()
+                    redTint.TintColor = Color3.fromRGB(255, 255, 255)
+                    if injuredTrack then injuredTrack:Stop(); injuredTrack = nil end
+                    if headShakeTrack then headShakeTrack:Stop(); headShakeTrack = nil end
+                    isRunning = false
+
+                    local function updateControllableAnimations()
+                        while humanoid and humanoid.Health > 0 do
+                            local hrp = char:FindFirstChild("HumanoidRootPart")
+                            local velocity = hrp and hrp.Velocity or Vector3.new()
+                            local horizontalVel = Vector3.new(velocity.X, 0, velocity.Z)
+                            local speed = horizontalVel.Magnitude
+                            local isMoving = speed > 0.5
+                            local isRunningState = (isShiftHeld and speed > 2)
+
+                            if isRunningState then
+                                if runTrack then runTrack:Stop() end
+                                if walkTrack then walkTrack:Stop() end
+                                if idleTrack then idleTrack:Stop() end
+                                runTrack = playAnimationOnHumanoid("rbxassetid://95054120636955", true)
+                            elseif isMoving then
+                                if runTrack then runTrack:Stop() end
+                                if walkTrack then walkTrack:Stop() end
+                                if idleTrack then idleTrack:Stop() end
+                                walkTrack = playAnimationOnHumanoid("rbxassetid://97147187591899", true)
+                            else
+                                if runTrack then runTrack:Stop() end
+                                if walkTrack then walkTrack:Stop() end
+                                if idleTrack then idleTrack:Stop() end
+                                idleTrack = playAnimationOnHumanoid("rbxassetid://108552997989260", true)
+                            end
+                            task.wait(0.2)
+                        end
+                    end
+                    task.spawn(updateControllableAnimations)
+
+                    task.wait(30)
+                    if not humanoid or humanoid.Health <= 0 then cleanup() return end
+                    task.spawn(function()
+                        local demonStart2 = tick()
+                        while isRunning and humanoid and humanoid.Health > 0 do
+                            spawnDemonicSymbol(false)
+                            task.wait(4)
+                        end
+                    end)
+
+                    task.wait(45)
+                    if not humanoid or humanoid.Health <= 0 then cleanup() return end
+                    suicideTrack = playAnimationOnHumanoid("rbxassetid://82480275101558", false, function()
+                        humanoid.Health = 0
+                        cleanup()
+                    end)
+                end)
+            end)
+        end
+
+        humanoid.Died:Connect(function()
+            cleanup()
+        end)
+    end)
+end
+
+-- ===================== FONCTIONS EXISTANTES (TOUTES) =====================
+
+-- ApplyHitboxToHead / UpdateAllHitboxes
 local function ApplyHitboxToHead(part, enable)
     if not part or not part:IsA("BasePart") then return end
     if part.Name ~= "Head" then return end
-
     local model = part.Parent
     if not isHumanoidModel(model) or isPlayerCharacter(model) then return end
     if model == LocalPlayer.Character then return end
-
     pcall(function()
         if enable then
             if not HitboxModifiedHeads[part] then
@@ -112,10 +631,7 @@ Workspace.DescendantAdded:Connect(function(desc)
     end
 end)
 
-local flyBV, flyBG, flySeat, flyWeld, flyActive = nil, nil, nil, nil, false
-local CurrentFlyType = "CFrame"
-local FlySpeed = 50
-
+-- Fly
 local function cleanFly()
     if flyBV then flyBV:Destroy(); flyBV = nil end
     if flyBG then flyBG:Destroy(); flyBG = nil end
@@ -147,6 +663,10 @@ local function enableFly(enable)
 
     if CurrentFlyType == "CFrame" then
         hum.PlatformStand = true
+        flyBV = Instance.new("BodyVelocity")
+        flyBV.MaxForce = Vector3.new(0, 1e6, 0)
+        flyBV.Velocity = Vector3.new(0, 0, 0)
+        flyBV.Parent = hrp
     elseif CurrentFlyType == "BodyVelocity [BEST]" then
         flyBV = Instance.new("BodyVelocity")
         flyBV.MaxForce = Vector3.new(1e6, 1e6, 1e6)
@@ -198,6 +718,9 @@ RunService.Heartbeat:Connect(function(dt)
 
     if CurrentFlyType == "CFrame" then
         hrp.CFrame = hrp.CFrame + move * speed
+        if hrp.Position.Y < -500 then
+            hrp.CFrame = CFrame.new(hrp.Position.X, 0, hrp.Position.Z)
+        end
     elseif CurrentFlyType == "BodyVelocity [BEST]" and flyBV and flyBG then
         flyBG.CFrame = Camera.CFrame
         flyBV.Velocity = move * FlySpeed
@@ -207,6 +730,7 @@ RunService.Heartbeat:Connect(function(dt)
     end
 end)
 
+-- Xray
 local XrayEnabled = false
 local XrayDistance = 200
 local XrayMaterial = Enum.Material.Neon
@@ -292,218 +816,189 @@ local function updateXray()
     end)
 end
 
-local ShootThroughShieldActive = false
-local function UpdateAllShields()
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj.Name == "Shield" then
-            for _, part in ipairs(obj:GetDescendants()) do
-                if part:IsA("BasePart") then
-                    part.CanCollide = not ShootThroughShieldActive
-                end
+-- Silencer
+local function updateSilencers(state)
+    local backpack = LocalPlayer:FindFirstChild("Backpack")
+    if backpack then
+        for _, item in ipairs(backpack:GetChildren()) do
+            if item:GetAttribute("IsGun") == true then
+                item:SetAttribute("Silencer", state)
+            end
+        end
+    end
+    local char = LocalPlayer.Character
+    if char then
+        for _, item in ipairs(char:GetChildren()) do
+            if item:IsA("Tool") and item:GetAttribute("IsGun") == true then
+                item:SetAttribute("Silencer", state)
             end
         end
     end
 end
 
-local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
+local function checkAndApplySilencer(item)
+    if item:GetAttribute("IsGun") == true then
+        local isEnabled = Config.SilencerEnabled
+        item:SetAttribute("Silencer", isEnabled)
+    end
+end
 
-local Window = Fluent:CreateWindow({
-    Title = "Sentinel - Examination",
-    SubTitle = " | version : 4.00.00",
-    TabWidth = 160,
-    Size = UDim2.fromOffset(520, 420),
-    Acrylic = true,
-    Theme = "Light",
-    MinimizeKey = Enum.KeyCode.K
-})
+local function listenToBackpack(currentBackpack)
+    if not currentBackpack then return end
+    currentBackpack.ChildAdded:Connect(function(item)
+        task.wait(0.1)
+        checkAndApplySilencer(item)
+    end)
+end
 
-local successProduct, productInfo = pcall(function()
-    return MarketplaceService:GetProductInfo(game.PlaceId, Enum.InfoType.Asset)
+if LocalPlayer.Character then
+    LocalPlayer.Character.ChildAdded:Connect(function(item)
+        if item:IsA("Tool") then
+            checkAndApplySilencer(item)
+        end
+    end)
+end
+
+LocalPlayer.CharacterAdded:Connect(function(char)
+    task.wait(1)
+    local backpack = LocalPlayer:WaitForChild("Backpack")
+    listenToBackpack(backpack)
+    char.ChildAdded:Connect(function(item)
+        if item:IsA("Tool") then
+            checkAndApplySilencer(item)
+        end
+    end)
+    updateSilencers(Config.SilencerEnabled)
 end)
-local GameLastUpdateString = if successProduct and (productInfo and productInfo.Updated) then DateTime.fromUnixTimestamp(DateTime.fromIsoDate(productInfo.Updated).UnixTimestamp + -18000):FormatUniversalTime("MM/DD/YYYY HH:mm:ss", "en-us") .. " EST" else "n/a"
 
-local NeckSnapEvent = ReplicatedStorage:WaitForChild("NeckSnapEvent")
-local BashCooldownUI = ReplicatedStorage:WaitForChild("BashCooldownUI")
-local PunchEvent = ReplicatedStorage:FindFirstChild("PunchEvent")
+task.spawn(function()
+    local backpack = LocalPlayer:FindFirstChild("Backpack")
+    if backpack then listenToBackpack(backpack) end
+end)
 
-local gameAee = Lighting:FindFirstChild("aee")
-local gameRadiationTint = Lighting:FindFirstChild("RadiationTint")
+-- Nametags & Team
+local function applyNametags(char)
+    local head = char and char:FindFirstChild("Head")
+    if not head then return end
+    local tag = head:FindFirstChild("NameTag")
+    if not tag then
+        tag = head:WaitForChild("NameTag", 5)
+        if not tag then return end
+    end
+    tag.CharacterName.TextColor3 = Config.TagColor
+    tag.Rank.TextColor3 = Config.TagColor
+    tag.Username.TextColor3 = Config.TagColor
+    if Config.CharacterName ~= "" then
+        tag.CharacterName.Text = "[" .. Config.CharacterName .. "]"
+    else
+        tag.CharacterName.Text = ""
+    end
+    if Config.CharacterRank ~= "" then
+        tag.Rank.Text = "[" .. Config.CharacterRank .. "]"
+    else
+        tag.Rank.Text = ""
+    end
+end
 
-local Tabs = {
-    Player = Window:AddTab({ Title = "Player", Icon = "user" }),
-    ESP = Window:AddTab({ Title = "ESP", Icon = "eye" }),
-    Combat = Window:AddTab({ Title = "Combat", Icon = "crosshair" }),
-    World = Window:AddTab({ Title = "World", Icon = "globe" }),
-    Game = Window:AddTab({ Title = "Game", Icon = "trophy" }),
-    About = Window:AddTab({ Title = "About", Icon = "info" }),
-}
-
-local Config = {
-    SpeedHackEnabled = false,
-    WalkSpeedValue = 16,
-    InfiniteStaminaEnabled = false,
-    JumpPowerEnabled = false,
-    JumpPowerValue = 50,
-    InfiniteJump = false,
-    JumpBypassActive = false,
-    FlyEnabled = false,
-    FlySpeed = 50,
-    FlyType = "CFrame",
-    NoclipEnabled = false,
-    AutoWipeBlood = false,
-    ShowCoordinates = false,
-    ShowDebugPanel = false,
-    GAttackEnabled = false,
-    BypassCombatCooldowns = false,
-    AutoSpamAttack = false,
-    AntiCamShake = false,
-    ImmuneLookHazard = false,
-    HighlightPlayer = false,
-    HighlightFriends = false,
-    HighlightMobs = false,
-    HealthPlayer = false,
-    HealthFriends = false,
-    HealthMobs = false,
-    TracerPlayer = false,
-    TracerFriends = false,
-    TracerMobs = false,
-    ColorPlayer = Color3.fromRGB(100, 200, 255),
-    ColorFriends = Color3.fromRGB(100, 255, 100),
-    ColorMobs = Color3.fromRGB(255, 100, 100),
-    MaxDistance = 1000,
-    HLFillTrans = 0.7,
-    HLOutlineTrans = 1.0,
-    FullBright = false,
-    Xray = false,
-    XrayDistance = 200,
-    NoFog = false,
-    UnlockThirdPerson = false,
-    FakeDeath = false,
-    InfiniteNightVision = false,
-    AimlockEnabled = false,
-    WallCheck = true,
-    FOVCircleSize = 150,
-    LockPower = 50,
-    BodyPartLock = "Head",
-}
-
-local ValidCombatTools = {
-    ["MPV-9"] = true, ["Mossberg 590A1"] = true, ["Beanbag Shotgun"] = true, ["VGS-9"] = true,
-    ["Lock-17 [F]"] = true, ["MPV-SD"] = true, ["IA AR-56"] = true, ["AR-18 'Standard'"] = true,
-    ["AR-21"] = true, R8 = true, RPK = true, RPD = true, ["P95 'Knight'"] = true,
-    ["A9 Brigadier [F]"] = true, ["SMX-9"] = true, ["PMS-12T 'Hammer' [S]"] = true, ["Lock-17"] = true,
-    ["AR-19"] = true, ["Lock-17 [S]"] = true, ["Lock-18"] = true, ["A9 Brigadier"] = true,
-    ["VGS-45 'Striker'"] = true, ["AR-19 'Phantom''"] = true, ["Arcturus .50"] = true,
-    ["Tursk R-12 'Breakstorm'"] = true, ["MPV-9x19"] = true, ["MPV-9x19 [S]"] = true, ["K7 'Tempest'"] = true,
-    ["AR-19 'Phantom'"] = true, M16A2 = true, ["Glock-18"] = true, ["AKS-74u"] = true,
-    ["SRS-58"] = true, ["F7 Lynx"] = true, ["SHC-23"] = true, ["IB-5 Carcara"] = true,
-    ["AEN-50"] = true, ["VGS-45"] = true, ["PMS-12T 'Hammer'"] = true, ["AK-74M (Bayonet)"] = true,
-    ["Night Stalker"] = true, M249 = true, ["AR-23"] = true, ["AK-74"] = true
-}
-
-local WeaponAnimations = {
-    ["MPV-9"] = "rbxassetid://132986160862388", ["SMX-9"] = "rbxassetid://132986160862388",
-    ["MPV-9x19"] = "rbxassetid://132986160862388", ["MPV-SD"] = "rbxassetid://84050213985015",
-    ["AR-18 'Standard'"] = "rbxassetid://132986160862388", ["VGS-45 'Striker'"] = "rbxassetid://119099679349414",
-    ["P95 'Knight'"] = "rbxassetid://119099679349414", ["AR-19"] = "rbxassetid://132986160862388",
-    M16A2 = "rbxassetid://132986160862388", ["A9 Brigadier"] = "rbxassetid://74792106188393",
-    ["A9 Brigadier [F]"] = "rbxassetid://74792106188393", ["Lock-17"] = "rbxassetid://74792106188393",
-    ["Tursk R-12 'Breakstorm'"] = "rbxassetid://74792106188393", ["Lock-17 [S]"] = "rbxassetid://74792106188393",
-    ["MPV-9x19 [S]"] = "rbxassetid://76929295689492", ["AR-21"] = "rbxassetid://76929295689492",
-    ["IB-5 Carcara"] = "rbxassetid://76929295689492", ["IA AR-56"] = "rbxassetid://116750283539846",
-    ["AEN-50"] = "rbxassetid://76929295689492", RPD = "rbxassetid://76929295689492",
-    RPK = "rbxassetid://76929295689492", ["AK-74"] = "rbxassetid://76929295689492",
-    ["Arcturus .50"] = "rbxassetid://74792106188393", ["F7 Lynx"] = "rbxassetid://74792106188393",
-    ["Glock-19 [S]"] = "rbxassetid://74792106188393", ["Glock-18"] = "rbxassetid://74792106188393",
-    ["AR-19 'Phantom'"] = "rbxassetid://70983687392228", ["AK-74M (Bayonet)"] = "rbxassetid://116750283539846",
-    ["Night Stalker"] = "rbxassetid://114744562625259", ["PMS-12T 'Hammer'"] = "rbxassetid://119099679349414",
-    ["SRS-58"] = "rbxassetid://119099679349414", ["SHC-23"] = "rbxassetid://97981174560418",
-    Default = "rbxassetid://74792106188393"
-}
-
-local testerCFGui, testerCFLabel, testerDebugGui, testerDebugPanel
-local debugLabelsCache = {}
-local savedHipHeight = 2
-local CurrentAnimTrack = nil
-local LastAttackTick = 0
-local LastSpecialAttackTick = 0
-local IsSpecialAttackActive = false
-local CooldownCounter = 0
-local CooldownData = { Bash = nil, Kick = nil }
-local ActiveTweens = {}
-local CachedMobs = {}
-local tracerCache = {}
-local OrigAmbient = Lighting.Ambient
-local OrigOutdoorAmbient = Lighting.OutdoorAmbient
-local OrigBrightness = Lighting.Brightness
-local OrigFogEnd = Lighting.FogEnd
-local OrigFogStart = Lighting.FogStart
-local OrigTimeOfDay = Lighting.TimeOfDay
-
-local FakeDeathAnimTrack = nil
-local FakeInfectionExecuted = false
-local InfectionAvailable = true
-
-local InfiniteNVConnection = nil
-local NVForcerConnection = nil
-
-local isShiftHeld = false
-
-local CurrentTarget = nil
-local FOVCircle = nil
-
-local AutoShieldRemovalActive = false
-local AutoShieldRemovalConnection = nil
-
-local function BreakGasmask()
-    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-    if not playerGui then return false end
-    local gasmaskGui = playerGui:FindFirstChild("Gasmask")
-    if not gasmaskGui then return false end
-    local maskHole = gasmaskGui:FindFirstChild("MaskHole")
-    local glass = gasmaskGui:FindFirstChild("Glass")
-    if maskHole then
-        if maskHole:IsA("ImageLabel") then
-            maskHole.ImageTransparency = 0
-            maskHole.Visible = true
-        elseif maskHole:IsA("Frame") then
-            maskHole.Visible = true
-            for _, child in pairs(maskHole:GetDescendants()) do
-                if child:IsA("ImageLabel") then
-                    child.ImageTransparency = 0
-                    child.Visible = true
-                end
-            end
+local function changeTeam(teamName)
+    local team = Teams:FindFirstChild(teamName)
+    if team then
+        LocalPlayer.Team = team
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChildOfClass("Humanoid") then
+            char:FindFirstChildOfClass("Humanoid").Health = 0
         end
     end
-    local crackSound = Instance.new("Sound")
-    crackSound.SoundId = "rbxassetid://632831227"
-    crackSound.Volume = 1
-    crackSound.Parent = gasmaskGui
-    crackSound:Play()
-    Debris:AddItem(crackSound, 3)
-    if glass and glass:IsA("ImageLabel") then
-        local originalTransparency = glass.ImageTransparency
-        TweenService:Create(glass, TweenInfo.new(0.1), { ImageTransparency = 0.5 }):Play()
-        task.wait(0.05)
-        TweenService:Create(glass, TweenInfo.new(0.5), { ImageTransparency = originalTransparency }):Play()
+end
+
+LocalPlayer.CharacterAdded:Connect(function(char)
+    task.spawn(function()
+        applyNametags(char)
+    end)
+    task.wait(1)
+    local clientScripts = char:FindFirstChild("ClientScripts")
+    if clientScripts then
+        local stagger = clientScripts:FindFirstChild("Stagger")
+        if stagger then
+            stagger.Disabled = not Config.StaggerEnabled
+        end
     end
-    return true
+end)
+
+if LocalPlayer.Character then
+    applyNametags(LocalPlayer.Character)
+    local clientScripts = LocalPlayer.Character:FindFirstChild("ClientScripts")
+    if clientScripts then
+        local stagger = clientScripts:FindFirstChild("Stagger")
+        if stagger then
+            stagger.Disabled = not Config.StaggerEnabled
+        end
+    end
 end
 
-local function suicide()
-    local character = LocalPlayer.Character
-    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-    if humanoid then humanoid.Health = 0 end
+-- Fake Injured
+local function toggleFakeInjured()
+    if Config.FakeInjured then
+        local char = LocalPlayer.Character
+        if not char then return end
+        local humanoid = char:FindFirstChildOfClass("Humanoid")
+        if not humanoid then return end
+        if not FakeInjuredTrack then
+            local animator = humanoid:FindFirstChildOfClass("Animator") or Instance.new("Animator", humanoid)
+            local animation = Instance.new("Animation")
+            animation.AnimationId = "rbxassetid://94302036679429"
+            FakeInjuredTrack = animator:LoadAnimation(animation)
+            FakeInjuredTrack.Looped = true
+        end
+    else
+        if FakeInjuredTrack then
+            FakeInjuredTrack:Stop()
+            FakeInjuredTrack = nil
+        end
+    end
 end
 
-local function executeFakeInfection()
-    if not InfectionAvailable then return end
-    InfectionAvailable = false
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/selym0905-ops/Examinations-script/refs/heads/main/Fake%20Infection"))()
-    LocalPlayer.CharacterAdded:Wait()
-    InfectionAvailable = true
-end
+RunService.Heartbeat:Connect(function()
+    if not Config.FakeInjured then
+        if FakeInjuredTrack and FakeInjuredTrack.IsPlaying then
+            FakeInjuredTrack:Stop()
+        end
+        return
+    end
+    local char = LocalPlayer.Character
+    if not char then return end
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not humanoid or humanoid.Health <= 0 then
+        if FakeInjuredTrack and FakeInjuredTrack.IsPlaying then
+            FakeInjuredTrack:Stop()
+        end
+        return
+    end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then
+        if FakeInjuredTrack and FakeInjuredTrack.IsPlaying then
+            FakeInjuredTrack:Stop()
+        end
+        return
+    end
+    local velocity = hrp.Velocity
+    local horizontalVelocity = Vector3.new(velocity.X, 0, velocity.Z)
+    local isIdle = horizontalVelocity.Magnitude < 0.5 and humanoid:GetState() ~= Enum.HumanoidStateType.Jumping and humanoid:GetState() ~= Enum.HumanoidStateType.Freefall
+    
+    if isIdle then
+        if FakeInjuredTrack and not FakeInjuredTrack.IsPlaying then
+            FakeInjuredTrack:Play()
+        end
+    else
+        if FakeInjuredTrack and FakeInjuredTrack.IsPlaying then
+            FakeInjuredTrack:Stop()
+        end
+    end
+end)
+
+-- Fake Death
+local fakeDeathBV = nil
+local fakeDeathBP = nil
 
 local function toggleFakeDeath()
     local character = LocalPlayer.Character
@@ -511,6 +1006,9 @@ local function toggleFakeDeath()
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     if not humanoid then return end
     if Config.FakeDeath then
+        if fakeDeathBV then fakeDeathBV:Destroy(); fakeDeathBV = nil end
+        if fakeDeathBP then fakeDeathBP:Destroy(); fakeDeathBP = nil end
+
         local animator = humanoid:FindFirstChildOfClass("Animator") or Instance.new("Animator", humanoid)
         local animation = Instance.new("Animation")
         animation.AnimationId = "rbxassetid://114023816208972"
@@ -518,14 +1016,251 @@ local function toggleFakeDeath()
         FakeDeathAnimTrack.Looped = true
         FakeDeathAnimTrack:Play()
         humanoid.PlatformStand = true
+        humanoid.WalkSpeed = 0
+        humanoid.JumpPower = 0
+
         local hrp = character:FindFirstChild("HumanoidRootPart")
-        if hrp then hrp.Velocity = Vector3.new(0, -10, 0) end
+        if hrp then
+            fakeDeathBV = Instance.new("BodyVelocity")
+            fakeDeathBV.MaxForce = Vector3.new(1e6, 1e6, 1e6)
+            fakeDeathBV.Velocity = Vector3.new(0, 0, 0)
+            fakeDeathBV.Parent = hrp
+
+            fakeDeathBP = Instance.new("BodyPosition")
+            fakeDeathBP.MaxForce = Vector3.new(1e6, 1e6, 1e6)
+            fakeDeathBP.Position = hrp.Position + Vector3.new(0, 1, 0)
+            fakeDeathBP.Parent = hrp
+        end
     else
         if FakeDeathAnimTrack then FakeDeathAnimTrack:Stop(); FakeDeathAnimTrack = nil end
         humanoid.PlatformStand = false
+        humanoid.WalkSpeed = 9
+        humanoid.JumpPower = 50
+        if fakeDeathBV then fakeDeathBV:Destroy(); fakeDeathBV = nil end
+        if fakeDeathBP then fakeDeathBP:Destroy(); fakeDeathBP = nil end
     end
 end
 
+-- Suicide avec animation
+local function suicideWithAnimation()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+    local animator = humanoid:FindFirstChildOfClass("Animator") or Instance.new("Animator", humanoid)
+    local anim = Instance.new("Animation")
+    anim.AnimationId = "rbxassetid://82480275101558"
+    local track = animator:LoadAnimation(anim)
+    track:Play()
+    track.Stopped:Wait()
+    humanoid.Health = 0
+end
+
+-- Remove Elephant Foot
+local function removeElephantFoot()
+    local target = workspace:FindFirstChild("LookAtMe")
+    if target then
+        target:Destroy()
+        Fluent:Notify({ Title = "Success", Content = "Elephant foot removed", Duration = 3 })
+    else
+        Fluent:Notify({ Title = "Failed", Content = "Elephant foot already removed", Duration = 3 })
+    end
+end
+
+-- Teleport
+local teleportPoints = {
+    ["Sector 1"] = {
+        {"Spawn", Vector3.new(-55, -33, -1410)},
+        {"Generator 1", Vector3.new(135, -30, -1225)},
+        {"Reactor 4", Vector3.new(-230, -30, -1428)},
+        {"Mutant", Vector3.new(-155, -33, -1565)},
+        {"Valve", Vector3.new(-225, -35, -1635)},
+        {"Generator 2", Vector3.new(-145, -30, -1149)},
+    },
+    ["Sector 2"] = {
+        {"Sector entrance", Vector3.new(-110, -10, -825)},
+        {"Russman's office", Vector3.new(38, -10, -917)},
+        {"Armory", Vector3.new(-45, -10, -894)},
+        {"Keycard", Vector3.new(50, -10, -1054)},
+        {"Steve Remington", Vector3.new(-30, 0, -1058)},
+    },
+    ["Sector 3"] = {
+        {"Sector entrance", Vector3.new(208, -31, -1171)},
+        {"Crates 1-3", Vector3.new(289, -31, -1216)},
+        {"Crate 4", Vector3.new(676, -31, -1342)},
+        {"Crate 5", Vector3.new(597, -49, -1395)},
+        {"Crate 6", Vector3.new(471, -50, -1293)},
+        {"C4 crate 1", Vector3.new(462, -31, -1004)},
+        {"C4 crate 2", Vector3.new(349, -31, -817)},
+        {"C4 crate 3", Vector3.new(636, -31, -754)},
+        {"C4 crate 4", Vector3.new(843, -18, -1060)},
+        {"Keycard", Vector3.new(774, -31, -857)},
+    },
+    ["Out-of-map"] = {
+        {"Baseplate", Vector3.new(-200, -2, -75)},
+        {"Rasonian armory", Vector3.new(63, 23, -1705)}
+    },
+}
+
+local function teleportTo(position)
+    local char = LocalPlayer.Character
+    if char and char:FindFirstChild("HumanoidRootPart") then
+        char:PivotTo(CFrame.new(position))
+    end
+end
+
+-- Animations (toggles et buttons)
+local toggleAnims = {
+    ["Artur Novas's idle"] = "rbxassetid://105747901312742",
+    ["Adam Dice (died)"] = "rbxassetid://114023816208972",
+    ["Chimera's walk (old)"] = "rbxassetid://97147187591899",
+    ["Chimera's run (old)"] = "rbxassetid://95054120636955",
+    ["Sinitzyn's idle"] = "rbxassetid://110122744601596",
+    ["Sinitzyn's stun"] = "rbxassetid://111159713841127",
+    ["Kamikaze's walk"] = "rbxassetid://87989829896123",
+    ["Kamikaze's run"] = "rbxassetid://78355773495995",
+    ["Mikhail William's walk (old)"] = "rbxassetid://100407162198079",
+    ["Mikhail William's run (old)"] = "rbxassetid://126189604062142",
+    ["Mikhail William's walk"] = "rbxassetid://91584116987163",
+    ["Mikhail William's run"] = "rbxassetid://88561714950741",
+    ["Dave's walk"] = "rbxassetid://102796637818967",
+    ["Dave's idle"] = "rbxassetid://114416822114803",
+    ["Dave's run"] = "rbxassetid://117962541964796",
+    ["Gilbert's idle"] = "rbxassetid://93686257760742",
+    ["Gabriel Campos's idle"] = "rbxassetid://90243612758647",
+    ["Elsher Tachyon's idle"] = "rbxassetid://77191557762002",
+    ["Lurker's idle"] = "rbxassetid://86501473853720",
+    ["Lurker's sleeping"] = "rbxassetid://115201807246648",
+    ["Manhattan Ristretto's idle"] = "rbxassetid://137802244588968",
+    ["Masterbait"] = "rbxassetid://72042024",
+    ["Mikhail Willaim's idle (old)"] = "rbxassetid://88875709567990",
+    ["Mikhail William's idle"] = "rbxassetid://87959458481723",
+    ["Mikhail William's walk"] = "rbxassetid://91584116987163",
+    ["Mikhail William's run"] = "rbxassetid://88561714950741",
+    ["Mutant crawler idle"] = "rbxassetid://81279098398635",
+    ["Slasher's idle (old)"] = "rbxassetid://91056825760026",
+    ["Slasher's idle"] = "rbxassetid://95464797704887",
+    ["Slasher's walk"] = "rbxassetid://139858886667310",
+    ["Slasher's stun"] = "rbxassetid://137568989278456",
+    ["Slasher's run"] = "rbxassetid://94555617501510",
+    ["Stan's idle"] = "rbxassetid://108552997989260",
+    ["MGF scared"] = "rbxassetid://86398576306953",
+    ["MGF patrol"] = "rbxassetid://131603010936163",
+    ["MGF musician"] = "rbxassetid://138827413895574",
+    ["MGF dying"] = "rbxassetid://128467654154071",
+    ["MGF medic"] = "rbxassetid://129366509916255",
+    ["MGF injured"] = "rbxassetid://94302036679429",
+    ["MGF idle (1)"] = "rbxassetid://113537404842453",
+    ["MGF idle (2)"] = "rbxassetid://102193570284695",
+    ["Viral Executioner's idle"] = "rbxassetid://97492866706742",
+    ["Viral Executioner's walk"] = "rbxassetid://103392791669526",
+    ["Viral Commander's walk"] = "rbxassetid://17621267464",
+    ["Viral Commander's run"] = "rbxassetid://111821553591135",
+    ["Head shake"] = "rbxassetid://118621065272904",
+    ["Unstable"] = "rbxassetid://9146103628",
+    ["Josh Katzmann idle"] = "rbxassetid://131498119560497",
+    ["Josh Katzmann healed idle"] = "rbxassetid://139426604018597",
+}
+
+local buttonAnims = {
+    ["Adam Dice's death"] = "rbxassetid://102514666836619",
+    ["Chimera's victim (old)"] = "rbxassetid://83991914102646",
+    ["Chimera's teleport (old)"] = "rbxassetid://126809285460597",
+    ["Chimera's enrage (old)"] = "rbxassetid://75151963392982",
+    ["Chimera's execution (old)"] = "rbxassetid://97305733594978",
+    ["Chimera's death"] = "rbxassetid://72189339897414",
+    ["Chimera's execution"] = "rbxassetid://128010889227844",
+    ["Chimera's enrage"] = "rbxassetid://99134420474156",
+    ["Chimera's teleport (1)"] = "rbxassetid://112732398453305",
+    ["Chimera's teleport (2)"] = "rbxassetid://136368566634578",
+    ["Chimera's teleport execution (1)"] = "rbxassetid://112634711476303",
+    ["Chimera's teleport execution (2)"] = "rbxassetid://135404812014332",
+    ["Chimera's last stand"] = "rbxassetid://110849469223486",
+    ["Chimera's punch"] = "rbxassetid://84314656273153",
+    ["Cultist's dropkick"] = "rbxassetid://103266367846238",
+    ["Cultist's miss"] = "rbxassetid://120641479913190",
+    ["Cloaker's run"] = "rbxassetid://131730874916280",
+    ["Controllable infected's turn (old)"] = "rbxassetid://136775254837264",
+    ["Cough"] = "rbxassetid://111615919261340",
+    ["Gilbert's execution"] = "rbxassetid://125655523925085",
+    ["Gilbert's victim"] = "rbxassetid://135138331651211",
+    ["D-Zero's vent"] = "rbxassetid://116242805691656",
+    ["D-Zero's execution"] = "rbxassetid://127050736497150",
+    ["Sinitzyn's swing"] = "rbxassetid://109639053938974",
+    ["Sinitzyn's kick"] = "rbxassetid://139352596916392",
+    ["Sinitzyn's enrage"] = "rbxassetid://98239206283649",
+    ["Sinitzyn's execution (RPD)"] = "rbxassetid://136147569002553",
+    ["Sinitzyn's execution (melee)"] = "rbxassetid://81984907411347",
+    ["Sinitzyn's explosion"] = "rbxassetid://99615889025883",
+    ["Slasher's swing"] = "rbxassetid://103822882233361",
+    ["Slasher's execution"] = "rbxassetid://132206439126644",
+    ["Slasher's victim"] = "rbxassetid://133617679957232",
+    ["Shielder's execution"] = "rbxassetid://90580282540451",
+    ["Slit Neck"] = "rbxassetid://130568157355000",
+    ["Infection fall (1)"] = "rbxassetid://99985127815659",
+    ["Infection fall (2)"] = "rbxassetid://139465334169627",
+    ["Iris's rage"] = "rbxassetid://102771532479094",
+    ["Kick"] = "rbxassetid://86079982232120",
+    ["Punch"] = "rbxassetid://83700864626681",
+    ["Taunt"] = "rbxassetid://80378935722704",
+    ["Josh Katzmann healed"] = "rbxassetid://85697630315285",
+    ["Lurker awaking"] = "rbxassetid://138937044212276",
+    ["Mutant stun"] = "rbxassetid://111539044506405",
+    ["Elephant foot"] = "rbxassetid://139981313122152",
+    ["Riser's resurrection"] = "rbxassetid://116866937096686",
+    ["Riser's death"] = "rbxassetid://89976361144233",
+    ["Hatred kill (1)"] = "rbxassetid://138691140561523",
+    ["Hatred kill (2)"] = "rbxassetid://91463196236370",
+    ["Hatred kill (3)"] = "rbxassetid://83632013221100",
+    ["Hatred kill (4)"] = "rbxassetid://91849031357031",
+    ["Viral runner's execution"] = "rbxassetid://84530831648572",
+    ["Viral runner's victim"] = "rbxassetid://76887258783187",
+    ["Viral runner's maul"] = "rbxassetid://135884501960780",
+    ["Viral runner's maul victim"] = "rbxassetid://118194067755191",
+    ["Viral leader's execution"] = "rbxassetid://84358691838862",
+    ["Viral leader's victim"] = "rbxassetid://76887258783187",
+    ["Viral slasher's execution"] = "rbxassetid://132206439126644",
+    ["Viral slasher's victim"] = "rbxassetid://133617679957232",
+    ["MGF's last stand"] = "rbxassetid://117105602056649",
+}
+
+local activeAnimTrack = nil
+
+local function playToggleAnim(id, state)
+    local char = LocalPlayer.Character
+    if not char then return end
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+    local animator = humanoid:FindFirstChildOfClass("Animator") or Instance.new("Animator", humanoid)
+
+    if state then
+        if activeAnimTrack then activeAnimTrack:Stop() end
+        local anim = Instance.new("Animation")
+        anim.AnimationId = id
+        activeAnimTrack = animator:LoadAnimation(anim)
+        activeAnimTrack.Looped = true
+        activeAnimTrack:Play()
+    else
+        if activeAnimTrack then
+            activeAnimTrack:Stop()
+            activeAnimTrack = nil
+        end
+    end
+end
+
+local function playButtonAnim(id)
+    local char = LocalPlayer.Character
+    if not char then return end
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+    local animator = humanoid:FindFirstChildOfClass("Animator") or Instance.new("Animator", humanoid)
+    local anim = Instance.new("Animation")
+    anim.AnimationId = id
+    local track = animator:LoadAnimation(anim)
+    track:Play()
+end
+
+-- Unlock Third Person
 local function unlockThirdPerson()
     pcall(function()
         LocalPlayer.CameraMaxZoomDistance = 99999
@@ -539,6 +1274,7 @@ local function resetThirdPerson()
     pcall(function() UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter end)
 end
 
+-- Aimlock helpers
 local function CreateFOVCircle()
     if not Drawing then return nil end
     local circle = Drawing.new("Circle")
@@ -698,7 +1434,7 @@ local function ApplyAimlock()
         local cameraPos = Camera.CFrame.Position
         local directionToTarget = (targetPos - cameraPos).Unit
         local currentDirection = Camera.CFrame.LookVector
-        local newDirection = currentDirection:Lerp(directionToTarget, lockStrength)
+        local newDirection = currentDirection:Lerp(directionToTarget, math.min(lockStrength * 1.5, 1))
         local newCFrame = CFrame.lookAt(cameraPos, cameraPos + newDirection)
         Camera.CFrame = newCFrame
     else
@@ -706,526 +1442,7 @@ local function ApplyAimlock()
     end
 end
 
-local WalkspeedSection = Tabs.Player:AddSection("Walkspeed Settings")
-WalkspeedSection:AddToggle("WSToggle", { Title = "Enable Speed Modifiers", Default = false }):OnChanged(function(v) Config.SpeedHackEnabled = v end)
-WalkspeedSection:AddSlider("WSSlider", { Title = "WalkSpeed", Min = 1, Max = 150, Default = 16, Rounding = 0 }):OnChanged(function(v) Config.WalkSpeedValue = v end)
-WalkspeedSection:AddToggle("InfiniteStaminaToggle", { Title = "Infinite Stamina [BETA]", Default = false }):OnChanged(function(v)
-    Config.InfiniteStaminaEnabled = v
-    if not v then
-        isShiftHeld = false
-        local character = LocalPlayer.Character
-        if character then
-            local humanoid = character:FindFirstChildOfClass("Humanoid")
-            if humanoid then
-                if Config.SpeedHackEnabled then humanoid.WalkSpeed = Config.WalkSpeedValue else humanoid.WalkSpeed = 9 end
-            end
-        end
-    end
-end)
-
-local JumpSection = Tabs.Player:AddSection("Jump Settings")
-JumpSection:AddToggle("JPToggle", { Title = "Enable JumpPower", Default = false }):OnChanged(function(v) Config.JumpPowerEnabled = v end)
-JumpSection:AddSlider("JPSlider", { Title = "JumpPower ", Min = 5, Max = 75, Default = 50, Rounding = 0 }):OnChanged(function(v) Config.JumpPowerValue = v end)
-JumpSection:AddToggle("InfJump", { Title = "Infinite Jump", Default = false }):OnChanged(function(v) Config.InfiniteJump = v end)
-JumpSection:AddButton({ Title = "Bypass Jump AC", Callback = function() Config.JumpBypassActive = not Config.JumpBypassActive end })
-
-local SpecialSection = Tabs.Player:AddSection("Physic Settings")
-SpecialSection:AddToggle("FlyToggle", { Title = "Fly", Default = false }):OnChanged(function(v)
-    Config.FlyEnabled = v
-    if v then
-        CurrentFlyType = Config.FlyType
-        FlySpeed = Config.FlySpeed
-        enableFly(true)
-    else
-        enableFly(false)
-    end
-end)
-SpecialSection:AddDropdown("FlyTypeDropdown", { Title = "Fly Method", Values = {"CFrame", "BodyVelocity [BEST]", "Seat [UNDETECTED]"}, Default = "CFrame" }):OnChanged(function(v)
-    Config.FlyType = v
-    if Config.FlyEnabled then
-        CurrentFlyType = v
-        enableFly(true)
-    end
-end)
-SpecialSection:AddSlider("FlySpeedSlider", { Title = "Fly Speed", Min = 1, Max = 100, Default = 50, Rounding = 0 }):OnChanged(function(v)
-    Config.FlySpeed = v
-    FlySpeed = v
-end)
-SpecialSection:AddToggle("NoclipToggle", { Title = "Noclip", Default = false }):OnChanged(function(v) Config.NoclipEnabled = v end)
-
-local SuicideSection = Tabs.Player:AddSection("Reset Character")
-SuicideSection:AddButton({ Title = "Suicide", Callback = suicide })
-SuicideSection:AddToggle("FakeDeathToggle", { Title = "Fake Death", Default = false }):OnChanged(function(v)
-    Config.FakeDeath = v
-    toggleFakeDeath()
-end)
-
-local InfectionSection = Tabs.Player:AddSection("Fake Infection [EXTERNAL SCRIPT]")
-InfectionSection:AddButton({ Title = "Execute Fake Infection [BETA]", Callback = executeFakeInfection })
-
-local WeaponActionsSection = Tabs.Combat:AddSection("Fists Settings")
-WeaponActionsSection:AddToggle("GAttackToggle", { Title = "Enable G-Key Attack", Default = true }):OnChanged(function(v) Config.GAttackEnabled = v end)
-WeaponActionsSection:AddToggle("BypassCDToggle", { Title = "Bypass Client Cooldowns", Default = false }):OnChanged(function(v) Config.BypassCombatCooldowns = v end)
-WeaponActionsSection:AddToggle("AutoSpamToggle", { Title = "Auto-Spam Attack", Default = false }):OnChanged(function(v) Config.AutoSpamAttack = v end)
-
-local GunModsSection = Tabs.Combat:AddSection("Gun Mod")
-GunModsSection:AddToggle("AntiRecoilToggle", { Title = "No Recoil [ALPHA]", Default = false }):OnChanged(function(v) Config.AntiCamShake = v end)
-GunModsSection:AddToggle("ExpandHitbox", { Title = "Expand Hitbox (NPC Heads)", Default = false }):OnChanged(function(v)
-    HitboxEnabled = v
-    UpdateAllHitboxes(HitboxEnabled)
-end)
-
-local ShieldRemoverSection = Tabs.Combat:AddSection("Shield Remover [BETA]")
-ShieldRemoverSection:AddButton({ Title = "Delete All Shields", Callback = function()
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj.Name == "Shield" then obj:Destroy() end
-    end
-end })
-ShieldRemoverSection:AddToggle("ShootThroughShield", { Title = "Shoot Through Shield", Default = false }):OnChanged(function(v)
-    ShootThroughShieldActive = v
-    UpdateAllShields()
-end)
-ShieldRemoverSection:AddToggle("AutoShieldRemoval", { Title = "Auto-Remove Shields", Default = false }):OnChanged(function(v)
-    AutoShieldRemovalActive = v
-    if v then
-        for _, obj in ipairs(workspace:GetDescendants()) do
-            if obj.Name == "Shield" then obj:Destroy() end
-        end
-        if not AutoShieldRemovalConnection then
-            AutoShieldRemovalConnection = workspace.DescendantAdded:Connect(function(desc)
-                if AutoShieldRemovalActive then
-                    task.wait(0.1)
-                    if desc.Name == "Shield" then desc:Destroy() end
-                    for _, shield in ipairs(desc:GetDescendants()) do
-                        if shield.Name == "Shield" then shield:Destroy() end
-                    end
-                end
-            end)
-        end
-    else
-        if AutoShieldRemovalConnection then
-            AutoShieldRemovalConnection:Disconnect()
-            AutoShieldRemovalConnection = nil
-        end
-    end
-end)
-
-local AimlockSection = Tabs.Combat:AddSection("Aimlock Settings [BETA]")
-AimlockSection:AddToggle("AimlockEnabled", { Title = "Aimlock Entities", Default = false }):OnChanged(function(v) Config.AimlockEnabled = v end)
-AimlockSection:AddToggle("WallCheck", { Title = "Wall Check", Default = true }):OnChanged(function(v) Config.WallCheck = v end)
-AimlockSection:AddSlider("FOVCircleSize", { Title = "FOV Circle Size", Min = 50, Max = 500, Default = 150, Rounding = 0 }):OnChanged(function(v) Config.FOVCircleSize = v end)
-AimlockSection:AddSlider("LockPower", { Title = "Lock Power %", Min = 0, Max = 100, Default = 50, Rounding = 0 }):OnChanged(function(v) Config.LockPower = v end)
-AimlockSection:AddDropdown("BodyPartLock", { Title = "BodyPart Lock (R6)", Values = {"Head", "HRP", "Torso"}, Default = "Head" }):OnChanged(function(v) Config.BodyPartLock = v end)
-
-local HazardsSection = Tabs.Combat:AddSection("Radiations")
-HazardsSection:AddToggle("HazardImmToggle", { Title = "Anti-Radiation Effect [NOT A GODMOD]", Default = false }):OnChanged(function(v) Config.ImmuneLookHazard = v end)
-
-local GlobalESPSection = Tabs.ESP:AddSection("ESP Settings")
-GlobalESPSection:AddSlider("MaxDist", { Title = "Max ESP Distance", Min = 0, Max = 1000, Default = 250, Rounding = 0 }):OnChanged(function(v) Config.MaxDistance = v end)
-GlobalESPSection:AddSlider("FillTrans", { Title = "Highlight Fill Transparency", Min = 0, Max = 1, Default = 0.7, Rounding = 1 }):OnChanged(function(v) Config.HLFillTrans = v end)
-GlobalESPSection:AddSlider("OutTrans", { Title = "Highlight Outline Transparency", Min = 0, Max = 1, Default = 1.0, Rounding = 1 }):OnChanged(function(v) Config.HLOutlineTrans = v end)
-
-local PlayerESPSection = Tabs.ESP:AddSection("Player ESP")
-PlayerESPSection:AddToggle("HLPlayer", { Title = "Highlight Player", Default = false }):OnChanged(function(v) Config.HighlightPlayer = v end)
-PlayerESPSection:AddToggle("HPlayer", { Title = "ESP Health Player", Default = false }):OnChanged(function(v) Config.HealthPlayer = v end)
-PlayerESPSection:AddToggle("TPlayer", { Title = "Tracer Player", Default = false }):OnChanged(function(v) Config.TracerPlayer = v end)
-PlayerESPSection:AddColorpicker("CPPlayer", { Title = "Player ESP Color", Default = Config.ColorPlayer }):OnChanged(function(v) Config.ColorPlayer = v end)
-
-local FriendESPSection = Tabs.ESP:AddSection("Friend ESP [ALPHA]")
-FriendESPSection:AddToggle("HLFriends", { Title = "Highlight Friends", Default = false }):OnChanged(function(v) Config.HighlightFriends = v end)
-FriendESPSection:AddToggle("HFriends", { Title = "ESP Health Friend", Default = false }):OnChanged(function(v) Config.HealthFriends = v end)
-FriendESPSection:AddToggle("TFriends", { Title = "Tracer Friend", Default = false }):OnChanged(function(v) Config.TracerFriends = v end)
-FriendESPSection:AddColorpicker("CPFriends", { Title = "Friend ESP Color", Default = Config.ColorFriends }):OnChanged(function(v) Config.ColorFriends = v end)
-
-local MobESPSection = Tabs.ESP:AddSection("Entities ESP")
-MobESPSection:AddToggle("HLMobs", { Title = "Highlight Entities", Default = false }):OnChanged(function(v) Config.HighlightMobs = v end)
-MobESPSection:AddToggle("HMobs", { Title = "ESP Health EntitiesMobs", Default = false }):OnChanged(function(v) Config.HealthMobs = v end)
-MobESPSection:AddToggle("TMobs", { Title = "Tracer Entities", Default = false }):OnChanged(function(v) Config.TracerMobs = v end)
-MobESPSection:AddColorpicker("CPMobs", { Title = "Entities ESP Color", Default = Config.ColorMobs }):OnChanged(function(v) Config.ColorMobs = v end)
-
-local AtmosphereSection = Tabs.World:AddSection("Atmosphere")
-AtmosphereSection:AddToggle("FullBright", { Title = "Full Bright", Default = false }):OnChanged(function(v)
-    Config.FullBright = v
-    if v then
-        Lighting.Ambient = Color3.fromRGB(255, 255, 255)
-        Lighting.Brightness = 2
-    else
-        Lighting.Ambient = OrigAmbient
-        Lighting.Brightness = OrigBrightness
-    end
-end)
-AtmosphereSection:AddToggle("NoFog", { Title = "No Fog", Default = false }):OnChanged(function(v)
-    Config.NoFog = v
-    if v then
-        Lighting.FogEnd = 999999999
-        Lighting.FogStart = 999999999
-    else
-        Lighting.FogEnd = OrigFogEnd
-        Lighting.FogStart = OrigFogStart
-    end
-end)
-
-local XraySection = Tabs.World:AddSection("Xray Settings [BETA]")
-XraySection:AddToggle("XrayToggle", { Title = "Enable X-Ray", Default = false }):OnChanged(function(v)
-    XrayEnabled = v
-    updateXray()
-end)
-XraySection:AddSlider("XrayDistanceSlider", { Title = "Distance", Min = 1, Max = 1000, Default = 200, Rounding = 0 }):OnChanged(function(v)
-    XrayDistance = v
-    if XrayEnabled then updateXray() end
-end)
-XraySection:AddSlider("XrayTransparencySlider", { Title = "Transparency", Min = 0, Max = 1, Default = 0.3, Rounding = 2 }):OnChanged(function(v)
-    XrayTransparency = v
-    updateXrayMaterialAndTransparency()
-    if XrayEnabled then updateXray() end
-end)
-XraySection:AddDropdown("XrayMaterialDropdown", {
-    Title = "Material",
-    Values = {"Plastic", "Neon", "ForceField", "Glass", "SmoothPlastic"},
-    Default = "Neon",
-    Multi = false
-}):OnChanged(function(v)
-    local materialMap = {
-        Plastic = Enum.Material.Plastic,
-        Neon = Enum.Material.Neon,
-        ForceField = Enum.Material.ForceField,
-        Glass = Enum.Material.Glass,
-        SmoothPlastic = Enum.Material.SmoothPlastic
-    }
-    XrayMaterial = materialMap[v] or Enum.Material.Neon
-    updateXrayMaterialAndTransparency()
-    if XrayEnabled then updateXray() end
-end)
-
-local CameraSection = Tabs.World:AddSection("Camera Settings")
-CameraSection:AddToggle("UnlockThirdPerson", { Title = "Unlock Third Person (Zoomable)", Default = false }):OnChanged(function(v)
-    Config.UnlockThirdPerson = v
-    if v then unlockThirdPerson() else resetThirdPerson() end
-end)
-
-local VisualMechanicsSection = Tabs.World:AddSection("Screen Customization")
-VisualMechanicsSection:AddToggle("AutoWipe", { Title = "Auto-Wipe Screen Blood", Default = false }):OnChanged(function(v) Config.AutoWipeBlood = v end)
-VisualMechanicsSection:AddButton({ Title = "Instant Clean Screen", Callback = function()
-    local gui = LocalPlayer.PlayerGui:FindFirstChild("Gui")
-    if gui then
-        for _, v in pairs(gui:GetChildren()) do
-            if v.Name == "blood" then
-                v.Name = "clean"
-                TweenService:Create(v, TweenInfo.new(0.2), { ImageTransparency = 1 }):Play()
-                Debris:AddItem(v, 0.5)
-            end
-        end
-    end
-end })
-
-local WorldNVGSection = Tabs.World:AddSection("Night Vision & Gasmask")
-WorldNVGSection:AddButton({ Title = "Delete Gasmask", Callback = function()
-    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-    if playerGui then
-        local gasmaskGui = playerGui:FindFirstChild("Gasmask")
-        if gasmaskGui then gasmaskGui:Destroy() end
-    end
-end })
-WorldNVGSection:AddButton({ Title = "Break Gasmask", Callback = BreakGasmask })
-WorldNVGSection:AddToggle("InfiniteNightVisionToggle", { Title = "Infinite Night Vision", Default = false }):OnChanged(function(v)
-    Config.InfiniteNightVision = v
-    if v then
-        if InfiniteNVConnection then InfiniteNVConnection:Disconnect() end
-        if NVForcerConnection then NVForcerConnection:Disconnect() end
-        InfiniteNVConnection = RunService.Heartbeat:Connect(function()
-            if not Config.InfiniteNightVision then return end
-            local nvEffect = Lighting:FindFirstChild("__NVG_Effect")
-            if nvEffect and nvEffect.Enabled then
-                local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-                if playerGui then
-                    local nvHUD = playerGui:FindFirstChild("NightVisionHUD")
-                    if nvHUD and nvHUD:FindFirstChild("Container") then
-                        local container = nvHUD.Container
-                        local status = container:FindFirstChild("Status")
-                        if status then
-                            local batteryFrame = status:FindFirstChild("Battery")
-                            if batteryFrame then
-                                local bar = batteryFrame:FindFirstChild("Bar")
-                                local percentage = batteryFrame:FindFirstChild("Percentage")
-                                if bar and percentage then
-                                    bar.Size = UDim2.new(1, 0, bar.Size.Y.Scale, bar.Size.Y.Offset)
-                                    percentage.Text = "100%"
-                                end
-                            end
-                            local warnings = status:FindFirstChild("Warnings")
-                            if warnings then
-                                local lowPower = warnings:FindFirstChild("LowPower")
-                                if lowPower then lowPower.Visible = false end
-                            end
-                        end
-                    end
-                end
-            end
-        end)
-        NVForcerConnection = RunService.Stepped:Connect(function()
-            if not Config.InfiniteNightVision then return end
-            local char = LocalPlayer.Character
-            if not char then return end
-            local hum = char:FindFirstChildOfClass("Humanoid")
-            if not hum or hum.Health <= 0 then return end
-            local nvEffect = Lighting:FindFirstChild("__NVG_Effect")
-            local nvBloom = Lighting:FindFirstChild("__NVG_Bloom")
-            local nvLight = char:FindFirstChild("__NVG_Light")
-            local headLight = char:FindFirstChild("Head") and char.Head:FindFirstChildOfClass("PointLight")
-            if nvEffect and not nvEffect.Enabled then nvEffect.Enabled = true end
-            if nvBloom and not nvBloom.Enabled then nvBloom.Enabled = true end
-            if nvLight and not nvLight.Enabled then nvLight.Enabled = true end
-            if headLight and not headLight.Enabled then headLight.Enabled = true end
-            Lighting.Ambient = Color3.fromRGB(180, 180, 180)
-            Lighting.OutdoorAmbient = Color3.fromRGB(180, 180, 180)
-            Lighting.Brightness = 2
-            Lighting.FogEnd = 999999999
-            Lighting.FogStart = 999999999
-            local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-            if playerGui then
-                local nvHUD = playerGui:FindFirstChild("NightVisionHUD")
-                if nvHUD and not nvHUD.Enabled then nvHUD.Enabled = true end
-                if nvHUD and nvHUD:FindFirstChild("Container") then
-                    local container = nvHUD.Container
-                    local status = container:FindFirstChild("Status")
-                    if status then
-                        local quality = status:FindFirstChild("Quality")
-                        if quality then
-                            local textLabel = quality:FindFirstChildOfClass("TextLabel")
-                            if textLabel and textLabel.Text ~= "QUALITY: IDEAL" then
-                                textLabel.Text = "QUALITY: IDEAL"
-                                textLabel.TextColor3 = Color3.fromRGB(120, 255, 120)
-                            end
-                        end
-                    end
-                end
-            end
-        end)
-    else
-        if InfiniteNVConnection then InfiniteNVConnection:Disconnect() end
-        if NVForcerConnection then NVForcerConnection:Disconnect() end
-        Lighting.Ambient = OrigAmbient
-        Lighting.OutdoorAmbient = OrigOutdoorAmbient
-        Lighting.Brightness = OrigBrightness
-        Lighting.FogEnd = OrigFogEnd
-        Lighting.FogStart = OrigFogStart
-        local nvEffect = Lighting:FindFirstChild("__NVG_Effect")
-        if nvEffect then nvEffect.Enabled = false end
-        local nvBloom = Lighting:FindFirstChild("__NVG_Bloom")
-        if nvBloom then nvBloom.Enabled = false end
-        local char = LocalPlayer.Character
-        if char then
-            local nvLight = char:FindFirstChild("__NVG_Light")
-            if nvLight then nvLight.Enabled = false end
-            local head = char:FindFirstChild("Head")
-            if head then
-                local headLight = head:FindFirstChildOfClass("PointLight")
-                if headLight then headLight.Enabled = false end
-            end
-        end
-        local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-        if playerGui then
-            local nvHUD = playerGui:FindFirstChild("NightVisionHUD")
-            if nvHUD then nvHUD.Enabled = false end
-        end
-    end
-end)
-
-local GameSection = Tabs.Game:AddSection(".exe")
-GameSection:AddButton({
-    Title = "UNDEREQUIPPED [MUST BE IN A SECTOR]",
-    Callback = function()
-        local o = workspace:FindFirstChild("Classless_Badge")
-        if o then
-            local character = LocalPlayer.Character
-            if character and character:FindFirstChild("HumanoidRootPart") then
-                character:PivotTo(o:GetPivot() * CFrame.new(0, 2, 0))
-            end
-        end
-    end
-})
-
-local ChatLoggerEnabled = false
-local function ToggleNativeChat(enable)
-    if enable then
-        if TextChatService and TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
-            local chatWindow = TextChatService:FindFirstChild("ChatWindowConfiguration")
-            if chatWindow then chatWindow.Enabled = true end
-            local ui = CoreGui:FindFirstChild("TextChat")
-            if ui then ui.Enabled = true end
-            pcall(function()
-                TextChatService:FindFirstChild("ChatWindowParent"):FindFirstChild("ChatWindow").Visible = true
-            end)
-        else
-            local chatGui = LocalPlayer.PlayerGui:FindFirstChild("Chat")
-            if chatGui then chatGui.Enabled = true end
-            local legacy = CoreGui:FindFirstChild("Chat")
-            if legacy then legacy.Enabled = true end
-        end
-    end
-end
-
-GameSection:AddToggle("ChatLoggerToggle", { Title = "Show Native Chat (CoreGui)", Default = false }):OnChanged(function(v)
-    ChatLoggerEnabled = v
-    ToggleNativeChat(v)
-    if v then
-        Fluent:Notify({ Title = "Chat", Content = "Native chat interface enabled", Duration = 2 })
-    else
-        Fluent:Notify({ Title = "Chat", Content = "Native chat interface disabled", Duration = 2 })
-    end
-end)
-
-local DevPanelsSection = Tabs.Game:AddSection("Developer Debug Panels")
-DevPanelsSection:AddToggle("DebugPanelTgl", { Title = "Live Debug Stats Panel", Default = false }):OnChanged(function(v) Config.ShowDebugPanel = v end)
-DevPanelsSection:AddToggle("ShowCoords", { Title = "Show Coordinates", Default = false }):OnChanged(function(v) Config.ShowCoordinates = v end)
-
-local AboutSection = Tabs.About:AddSection("Credits & Links")
-AboutSection:AddButton({ Title = "Copy Discord Server Link", Callback = function()
-    local link = "https://discord.gg/gtFdtYSG"
-    if setclipboard then setclipboard(link)
-    else pcall(function() local tb = Instance.new("TextBox"); tb.Text = link; tb:CaptureFocus(); tb:ReleaseFocus(); tb:Destroy() end) end
-    Fluent:Notify({ Title = "Discord", Content = "Discord server link copied!", Duration = 3 })
-end })
-AboutSection:AddButton({ Title = "Copy Rscripts.net Link", Callback = function()
-    local link = "https://rscripts.net/script/examination-oBz7"
-    if setclipboard then setclipboard(link)
-    else pcall(function() local tb = Instance.new("TextBox"); tb.Text = link; tb:CaptureFocus(); tb:ReleaseFocus(); tb:Destroy() end) end
-    Fluent:Notify({ Title = "Rscripts.net", Content = "Rscript Link copied", Duration = 3 })
-end })
-AboutSection:AddParagraph({ Title = "Crédits", Content = "Main Developer : @x4tmq\nScript : Sentinel v0.27.42\n\nThanks for using my script!" })
-
-local function updateCoordinatesHUD()
-    if Config.ShowCoordinates then
-        if not testerCFGui or not testerCFGui.Parent then
-            local pGui = LocalPlayer:FindFirstChild("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui")
-            testerCFGui = Instance.new("ScreenGui", pGui)
-            testerCFGui.Name = "TesterCFGui"
-            testerCFGui.IgnoreGuiInset = true
-            testerCFGui.ResetOnSpawn = false
-            testerCFLabel = Instance.new("TextLabel", testerCFGui)
-            testerCFLabel.BackgroundTransparency = 1
-            testerCFLabel.Font = Enum.Font.Code
-            testerCFLabel.TextSize = 18
-            testerCFLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-            testerCFLabel.AnchorPoint = Vector2.new(0.5, 0)
-            testerCFLabel.Position = UDim2.new(0.5, 0, 0.12, 0)
-            testerCFLabel.Size = UDim2.new(0, 400, 0, 20)
-        end
-        local char = LocalPlayer.Character
-        local hrp = char and char:FindFirstChild("HumanoidRootPart")
-        if hrp then testerCFLabel.Text = string.format("cf: X %.2f  Y %.2f  Z %.2f", hrp.Position.X, hrp.Position.Y, hrp.Position.Z)
-        else testerCFLabel.Text = "CPosition: n/a" end
-    else
-        if testerCFGui then testerCFGui:Destroy(); testerCFGui = nil; testerCFLabel = nil end
-    end
-end
-
-local function createRow(parent, name, text, isTitle)
-    local label = Instance.new("TextLabel", parent)
-    label.Name = name
-    label.BackgroundTransparency = 1
-    label.Size = UDim2.new(1, -8, 0, isTitle and 20 or 18)
-    label.Font = Enum.Font.Code
-    label.TextSize = isTitle and 15 or 13
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    label.TextColor3 = isTitle and Color3.fromRGB(255, 230, 160) or Color3.fromRGB(230, 230, 230)
-    label.Text = text
-    if not isTitle then debugLabelsCache[name] = label end
-end
-
-local function setBoolRow(label, title, val)
-    if not label then return end
-    label.TextColor3 = val and Color3.fromRGB(120, 255, 120) or Color3.fromRGB(255, 120, 120)
-    label.Text = string.format("%s: %s", title, val and "on" or "off")
-end
-
-local function getGunUIAndTool()
-    local char = LocalPlayer.Character
-    local tool = char and char:FindFirstChildWhichIsA("Tool")
-    if not tool or not tool:GetAttribute("IsGun") then return nil, nil end
-    local pGui = LocalPlayer:FindFirstChild("PlayerGui")
-    return pGui and pGui:FindFirstChild(tool.Name), tool
-end
-
-local function updateLiveDebugPanel()
-    if Config.ShowDebugPanel then
-        if not testerDebugGui or not testerDebugGui.Parent then
-            local pGui = LocalPlayer:FindFirstChild("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui")
-            testerDebugGui = Instance.new("ScreenGui", pGui)
-            testerDebugGui.Name = "TesterDebugGui"
-            testerDebugPanel = Instance.new("Frame", testerDebugGui)
-            testerDebugPanel.Name = "Panel"
-            testerDebugPanel.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
-            testerDebugPanel.Position = UDim2.new(0, 20, 0.2, 0)
-            testerDebugPanel.Size = UDim2.new(0, 260, 0, 340)
-            Instance.new("UICorner", testerDebugPanel).CornerRadius = UDim.new(0, 6)
-            local stroke = Instance.new("UIStroke", testerDebugPanel)
-            stroke.Color = Color3.fromRGB(90, 90, 90)
-            stroke.Thickness = 1
-            local list = Instance.new("UIListLayout", testerDebugPanel)
-            list.Padding = UDim.new(0, 2)
-            list.SortOrder = Enum.SortOrder.LayoutOrder
-            createRow(testerDebugPanel, "title", " [Sentinel Debug System]", true)
-            createRow(testerDebugPanel, "game_updated", " last update: " .. GameLastUpdateString, false)
-            createRow(testerDebugPanel, "header_player", " -- PLAYER ENGINE --", true)
-            createRow(testerDebugPanel, "p_health", " health: n/a", false)
-            createRow(testerDebugPanel, "p_pos", " pos: n/a", false)
-            createRow(testerDebugPanel, "p_moveSpeed", " movespeed: n/a", false)
-            createRow(testerDebugPanel, "p_velocity", " vel mag: n/a", false)
-            createRow(testerDebugPanel, "p_isGrounded", " grounded: n/a", false)
-            createRow(testerDebugPanel, "header_gun", " -- GUN ENGINE --", true)
-            createRow(testerDebugPanel, "g_name", " gun: none", false)
-            createRow(testerDebugPanel, "g_mode", " mode: n/a", false)
-            createRow(testerDebugPanel, "g_ammo", " ammo: n/a", false)
-            createRow(testerDebugPanel, "g_state", " state: n/a", false)
-        end
-        local char = LocalPlayer.Character
-        local humanoid = char and char:FindFirstChildOfClass("Humanoid")
-        local hrp = char and char:FindFirstChild("HumanoidRootPart")
-        if humanoid and hrp then
-            debugLabelsCache.p_health.Text = string.format(" health: %d / %d", math.floor(humanoid.Health), math.floor(humanoid.MaxHealth))
-            debugLabelsCache.p_pos.Text = string.format(" pos: %.1f, %.1f, %.1f", hrp.Position.X, hrp.Position.Y, hrp.Position.Z)
-            debugLabelsCache.p_moveSpeed.Text = string.format(" movespeed: %.1f", Vector3.new(hrp.Velocity.X, 0, hrp.Velocity.Z).Magnitude)
-            debugLabelsCache.p_velocity.Text = string.format(" vel mag: %.1f", hrp.Velocity.Magnitude)
-            setBoolRow(debugLabelsCache.p_isGrounded, " grounded", humanoid.FloorMaterial ~= Enum.Material.Air)
-        end
-        local gunGui, gunTool = getGunUIAndTool()
-        if gunTool then
-            debugLabelsCache.g_name.Text = " gun: " .. gunTool.Name
-            local gMode, gClip, gAmmo = "n/a", "n/a", "n/a"
-            if gunGui and gunGui:FindFirstChild("Data") then
-                local data = gunGui.Data
-                if data:FindFirstChild("mode") then gMode = data.mode.Text end
-                if data:FindFirstChild("clip") then gClip = data.clip.Text end
-                if data:FindFirstChild("ammo") then gAmmo = data.ammo.Text end
-            end
-            debugLabelsCache.g_mode.Text = " mode: " .. gMode
-            debugLabelsCache.g_ammo.Text = " ammo: clip " .. gClip .. " | res " .. gAmmo
-            local states = {}
-            if gClip == "--" or gunTool:GetAttribute("Reloading") == true then table.insert(states, "reloading") end
-            if Camera and Camera.FieldOfView < 70 then table.insert(states, "aiming") end
-            if gunTool:GetAttribute("Silencer") then table.insert(states, "silenced") end
-            debugLabelsCache.g_state.Text = " state: " .. (#states == 0 and "idle" or table.concat(states, ", "))
-        else
-            debugLabelsCache.g_name.Text = " gun: none"
-            debugLabelsCache.g_mode.Text = " mode: n/a"
-            debugLabelsCache.g_ammo.Text = " ammo: n/a"
-            debugLabelsCache.g_state.Text = " state: unequipped"
-        end
-    else
-        if testerDebugGui then testerDebugGui:Destroy(); testerDebugGui = nil; testerDebugPanel = nil; table.clear(debugLabelsCache) end
-    end
-end
-
-UserInputService.InputBegan:Connect(function(input, processed)
-    if processed then return end
-    if input.KeyCode == Enum.KeyCode.Equals then
-        Config.ShowDebugPanel = not Config.ShowDebugPanel
-        local toggleOpt = Fluent.Options.DebugPanelTgl
-        if toggleOpt then toggleOpt:SetValue(Config.ShowDebugPanel) end
-    end
-end)
-
+-- Weapon attack & cooldowns (toutes les fonctions)
 local function loadAnimation(character, weaponName)
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     if not humanoid then return end
@@ -1506,13 +1723,19 @@ LocalPlayer.CharacterAdded:Connect(function(char)
         task.wait(0.5)
         toggleFakeDeath()
     end
+    if Config.FakeInjured then
+        task.wait(0.5)
+        toggleFakeInjured()
+    end
 end)
 
 local ClientEvents = ReplicatedStorage:FindFirstChild("Events")
 if ClientEvents and ClientEvents:FindFirstChild("client") and ClientEvents.client:FindFirstChild("Event") then
     pcall(function()
         ClientEvents.client.Event:Connect(function(p1, ...)
-            if p1 == "camspring" and Config.AntiCamShake then return end
+            if Config.AntiCamShake and (p1 == "camspring" or p1 == "recoil" or p1 == "shake") then
+                return
+            end
         end)
     end)
 end
@@ -1521,6 +1744,19 @@ local function checkMob(obj)
     if obj:IsA("Model") and obj:FindFirstChild("HumanoidRootPart") and obj:FindFirstChildOfClass("Humanoid") then
         if obj ~= LocalPlayer.Character and obj.Name ~= LocalPlayer.Name and not Players:GetPlayerFromCharacter(obj) and not table.find(CachedMobs, obj) then
             table.insert(CachedMobs, obj)
+            local mobId = obj:GetDebugId()
+            obj.AncestryChanged:Connect(function(child, parent)
+                if parent == nil then
+                    local line = tracerCache[mobId]
+                    if line then line.Visible = false end
+                    for i, m in ipairs(CachedMobs) do
+                        if m == obj then
+                            table.remove(CachedMobs, i)
+                            break
+                        end
+                    end
+                end
+            end)
         end
     end
 end
@@ -1567,6 +1803,11 @@ local function getTracer(id)
     end
     return tracerCache[id]
 end
+
+Players.PlayerRemoving:Connect(function(player)
+    local line = tracerCache[player.UserId]
+    if line then line.Visible = false end
+end)
 
 RunService.Stepped:Connect(function()
     if Config.NoclipEnabled and LocalPlayer.Character then
@@ -1838,5 +2079,696 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
+-- ===================== INTERFACE FLUENT =====================
+local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
+
+local Window = Fluent:CreateWindow({
+    Title = "Sentinel - Examination",
+    SubTitle = " | version : 4.00.00",
+    TabWidth = 160,
+    Size = UDim2.fromOffset(520, 420),
+    Acrylic = true,
+    Theme = "Light",
+    MinimizeKey = Enum.KeyCode.K
+})
+
+local successProduct, productInfo = pcall(function()
+    return MarketplaceService:GetProductInfo(game.PlaceId, Enum.InfoType.Asset)
+end)
+local GameLastUpdateString = if successProduct and (productInfo and productInfo.Updated) then DateTime.fromUnixTimestamp(DateTime.fromIsoDate(productInfo.Updated).UnixTimestamp + -18000):FormatUniversalTime("MM/DD/YYYY HH:mm:ss", "en-us") .. " EST" else "n/a"
+
+local Tabs = {
+    Player = Window:AddTab({ Title = "Player", Icon = "user" }),
+    ESP = Window:AddTab({ Title = "ESP", Icon = "eye" }),
+    Combat = Window:AddTab({ Title = "Combat", Icon = "crosshair" }),
+    World = Window:AddTab({ Title = "World", Icon = "globe" }),
+    Fun = Window:AddTab({ Title = "Fun", Icon = "smile" }),
+    Game = Window:AddTab({ Title = "Game", Icon = "trophy" }),
+    About = Window:AddTab({ Title = "About", Icon = "info" }),
+}
+
+-- ===================== PLAYER TAB =====================
+local WalkspeedSection = Tabs.Player:AddSection("Walkspeed Settings")
+WalkspeedSection:AddToggle("WSToggle", { Title = "Enable Speed Modifiers", Default = false }):OnChanged(function(v) Config.SpeedHackEnabled = v end)
+WalkspeedSection:AddSlider("WSSlider", { Title = "WalkSpeed", Min = 1, Max = 150, Default = 16, Rounding = 0 }):OnChanged(function(v) Config.WalkSpeedValue = v end)
+WalkspeedSection:AddToggle("InfiniteStaminaToggle", { Title = "Infinite Stamina [BETA]", Default = false }):OnChanged(function(v)
+    Config.InfiniteStaminaEnabled = v
+    if not v then
+        isShiftHeld = false
+        local character = LocalPlayer.Character
+        if character then
+            local humanoid = character:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                if Config.SpeedHackEnabled then humanoid.WalkSpeed = Config.WalkSpeedValue else humanoid.WalkSpeed = 9 end
+            end
+        end
+    end
+end)
+
+local JumpSection = Tabs.Player:AddSection("Jump Settings")
+JumpSection:AddToggle("JPToggle", { Title = "Enable JumpPower", Default = false }):OnChanged(function(v) Config.JumpPowerEnabled = v end)
+JumpSection:AddSlider("JPSlider", { Title = "JumpPower ", Min = 5, Max = 75, Default = 50, Rounding = 0 }):OnChanged(function(v) Config.JumpPowerValue = v end)
+JumpSection:AddToggle("InfJump", { Title = "Infinite Jump", Default = false }):OnChanged(function(v) Config.InfiniteJump = v end)
+JumpSection:AddButton({ Title = "Bypass Jump AC", Callback = function() Config.JumpBypassActive = not Config.JumpBypassActive end })
+
+local PhysicSection = Tabs.Player:AddSection("Physic Settings")
+PhysicSection:AddToggle("FlyToggle", { Title = "Fly", Default = false }):OnChanged(function(v)
+    Config.FlyEnabled = v
+    if v then
+        CurrentFlyType = Config.FlyType
+        FlySpeed = Config.FlySpeed
+        enableFly(true)
+    else
+        enableFly(false)
+    end
+end)
+PhysicSection:AddDropdown("FlyTypeDropdown", { Title = "Fly Method", Values = {"CFrame", "BodyVelocity [BEST]", "Seat [UNDETECTED]"}, Default = "CFrame" }):OnChanged(function(v)
+    Config.FlyType = v
+    if Config.FlyEnabled then
+        CurrentFlyType = v
+        enableFly(true)
+    end
+end)
+PhysicSection:AddSlider("FlySpeedSlider", { Title = "Fly Speed", Min = 1, Max = 100, Default = 50, Rounding = 0 }):OnChanged(function(v)
+    Config.FlySpeed = v
+    FlySpeed = v
+end)
+PhysicSection:AddToggle("NoclipToggle", { Title = "Noclip", Default = false }):OnChanged(function(v) Config.NoclipEnabled = v end)
+PhysicSection:AddToggle("StaggerToggle", {
+    Title = "Disable Stagger",
+    Default = false,
+    Callback = function(value)
+        Config.StaggerEnabled = not value
+        local char = LocalPlayer.Character
+        if char then
+            local clientScripts = char:FindFirstChild("ClientScripts")
+            if clientScripts then
+                local stagger = clientScripts:FindFirstChild("Stagger")
+                if stagger then
+                    stagger.Disabled = not Config.StaggerEnabled
+                end
+            end
+        end
+    end
+})
+
+local HealthSection = Tabs.Player:AddSection("Character Health")
+HealthSection:AddButton({ Title = "Suicide", Callback = function() local character = LocalPlayer.Character; local humanoid = character and character:FindFirstChildOfClass("Humanoid"); if humanoid then humanoid.Health = 0 end end })
+HealthSection:AddButton({ Title = "Suicide with Animation", Callback = suicideWithAnimation })
+HealthSection:AddToggle("FakeDeathToggle", { Title = "Fake Death", Default = false }):OnChanged(function(v)
+    Config.FakeDeath = v
+    toggleFakeDeath()
+end)
+HealthSection:AddToggle("FakeInjuredToggle", { Title = "Fake Injured (idle)", Default = false }):OnChanged(function(v)
+    Config.FakeInjured = v
+    toggleFakeInjured()
+end)
+
+local InfectionSection = Tabs.Player:AddSection("Fake Infection")
+InfectionSection:AddDropdown("InfectionModeDropdown", {
+    Title = "Mode",
+    Values = {"Non Controllable", "Controllable"},
+    Default = "Non Controllable",
+    Callback = function(value)
+        Config.InfectionMode = value
+    end
+})
+InfectionSection:AddButton({
+    Title = "Activate Infection",
+    Callback = function()
+        if InfectionActive then
+            Fluent:Notify({ Title = "Infection", Content = "Already active!", Duration = 2 })
+            return
+        end
+        startInfectionSequence()
+    end
+})
+
+local CustomizationSection = Tabs.Player:AddSection("Customization")
+CustomizationSection:AddInput("CharacterNameInput", {
+    Title = "Character Name",
+    Default = "",
+    Placeholder = "Enter name",
+    Callback = function(value)
+        Config.CharacterName = value
+        applyNametags(LocalPlayer.Character)
+    end
+})
+CustomizationSection:AddInput("CharacterRankInput", {
+    Title = "Rank",
+    Default = "",
+    Placeholder = "Enter rank",
+    Callback = function(value)
+        Config.CharacterRank = value
+        applyNametags(LocalPlayer.Character)
+    end
+})
+CustomizationSection:AddColorpicker("TagColorPicker", {
+    Title = "Nametag Color",
+    Default = Config.TagColor,
+    Callback = function(value)
+        Config.TagColor = value
+        applyNametags(LocalPlayer.Character)
+    end
+})
+CustomizationSection:AddDropdown("TeamDropdown", {
+    Title = "Team",
+    Values = {"Menlo", "RIF", "RSU"},
+    Default = "Menlo",
+    Callback = function(value)
+        Config.Team = value
+        changeTeam(value)
+    end
+})
+
+-- ===================== COMBAT TAB =====================
+local WeaponActionsSection = Tabs.Combat:AddSection("Fists Settings")
+WeaponActionsSection:AddToggle("GAttackToggle", { Title = "Enable G-Key Attack", Default = true }):OnChanged(function(v) Config.GAttackEnabled = v end)
+WeaponActionsSection:AddToggle("BypassCDToggle", { Title = "Bypass Client Cooldowns", Default = false }):OnChanged(function(v) Config.BypassCombatCooldowns = v end)
+WeaponActionsSection:AddToggle("AutoSpamToggle", { Title = "Auto-Spam Attack", Default = false }):OnChanged(function(v) Config.AutoSpamAttack = v end)
+
+local GunModsSection = Tabs.Combat:AddSection("Gun Mod")
+GunModsSection:AddToggle("AntiRecoilToggle", { Title = "No Recoil [ALPHA]", Default = false }):OnChanged(function(v) Config.AntiCamShake = v end)
+GunModsSection:AddToggle("ExpandHitbox", { Title = "Expand Hitbox (NPC Heads)", Default = false }):OnChanged(function(v)
+    HitboxEnabled = v
+    UpdateAllHitboxes(HitboxEnabled)
+end)
+GunModsSection:AddToggle("SilencerToggle", { Title = "Silencer (client only)", Default = false }):OnChanged(function(v)
+    Config.SilencerEnabled = v
+    updateSilencers(v)
+end)
+
+local ShieldRemoverSection = Tabs.Combat:AddSection("Shield Remover [BETA]")
+ShieldRemoverSection:AddButton({ Title = "Delete All Shields", Callback = function()
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj.Name == "Shield" then obj:Destroy() end
+    end
+end })
+ShieldRemoverSection:AddToggle("ShootThroughShield", { Title = "Shoot Through Shield", Default = false }):OnChanged(function(v)
+    ShootThroughShieldActive = v
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj.Name == "Shield" then
+            for _, part in ipairs(obj:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = not v
+                end
+            end
+        end
+    end
+end)
+ShieldRemoverSection:AddToggle("AutoShieldRemoval", { Title = "Auto-Remove Shields", Default = false }):OnChanged(function(v)
+    AutoShieldRemovalActive = v
+    if v then
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj.Name == "Shield" then obj:Destroy() end
+        end
+        if not AutoShieldRemovalConnection then
+            AutoShieldRemovalConnection = workspace.DescendantAdded:Connect(function(desc)
+                if AutoShieldRemovalActive then
+                    task.wait(0.1)
+                    if desc.Name == "Shield" then desc:Destroy() end
+                    for _, shield in ipairs(desc:GetDescendants()) do
+                        if shield.Name == "Shield" then shield:Destroy() end
+                    end
+                end
+            end)
+        end
+    else
+        if AutoShieldRemovalConnection then
+            AutoShieldRemovalConnection:Disconnect()
+            AutoShieldRemovalConnection = nil
+        end
+    end
+end)
+
+local AimlockSection = Tabs.Combat:AddSection("Aimlock Settings [BETA]")
+AimlockSection:AddToggle("AimlockEnabled", { Title = "Aimlock Entities", Default = false }):OnChanged(function(v) Config.AimlockEnabled = v end)
+AimlockSection:AddToggle("WallCheck", { Title = "Wall Check", Default = true }):OnChanged(function(v) Config.WallCheck = v end)
+AimlockSection:AddSlider("FOVCircleSize", { Title = "FOV Circle Size", Min = 50, Max = 500, Default = 150, Rounding = 0 }):OnChanged(function(v) Config.FOVCircleSize = v end)
+AimlockSection:AddSlider("LockPower", { Title = "Lock Power %", Min = 0, Max = 100, Default = 50, Rounding = 0 }):OnChanged(function(v) Config.LockPower = v end)
+AimlockSection:AddDropdown("BodyPartLock", { Title = "BodyPart Lock (R6)", Values = {"Head", "HRP", "Torso"}, Default = "Head" }):OnChanged(function(v) Config.BodyPartLock = v end)
+
+local HazardsSection = Tabs.Combat:AddSection("Radiations")
+HazardsSection:AddToggle("HazardImmToggle", { Title = "Anti-Radiation Effect [NOT A GODMOD]", Default = false }):OnChanged(function(v) Config.ImmuneLookHazard = v end)
+
+-- ===================== WORLD TAB =====================
+local TeleportSection = Tabs.World:AddSection("Teleport")
+for sectorName, points in pairs(teleportPoints) do
+    local optionNames = {}
+    local positionMapping = {}
+    for _, data in ipairs(points) do
+        local locationName, coords = unpack(data)
+        table.insert(optionNames, locationName)
+        positionMapping[locationName] = coords
+    end
+    TeleportSection:AddDropdown(sectorName .. "Dropdown", {
+        Title = sectorName,
+        Values = optionNames,
+        Default = optionNames[1],
+        Callback = function(selectedValue)
+            local targetPosition = positionMapping[selectedValue]
+            if targetPosition then
+                teleportTo(targetPosition)
+            end
+        end
+    })
+end
+
+local AtmosphereSection = Tabs.World:AddSection("Atmosphere")
+AtmosphereSection:AddToggle("FullBright", { Title = "Full Bright", Default = false }):OnChanged(function(v)
+    Config.FullBright = v
+    if v then
+        Lighting.Ambient = Color3.fromRGB(255, 255, 255)
+        Lighting.Brightness = 2
+    else
+        Lighting.Ambient = OrigAmbient
+        Lighting.Brightness = OrigBrightness
+    end
+end)
+AtmosphereSection:AddToggle("NoFog", { Title = "No Fog", Default = false }):OnChanged(function(v)
+    Config.NoFog = v
+    if v then
+        Lighting.FogEnd = 999999999
+        Lighting.FogStart = 999999999
+    else
+        Lighting.FogEnd = OrigFogEnd
+        Lighting.FogStart = OrigFogStart
+    end
+end)
+
+local XraySection = Tabs.World:AddSection("Xray Settings [BETA]")
+XraySection:AddToggle("XrayToggle", { Title = "Enable X-Ray", Default = false }):OnChanged(function(v)
+    XrayEnabled = v
+    updateXray()
+end)
+XraySection:AddSlider("XrayDistanceSlider", { Title = "Distance", Min = 1, Max = 1000, Default = 200, Rounding = 0 }):OnChanged(function(v)
+    XrayDistance = v
+    if XrayEnabled then updateXray() end
+end)
+XraySection:AddSlider("XrayTransparencySlider", { Title = "Transparency", Min = 0, Max = 1, Default = 0.3, Rounding = 2 }):OnChanged(function(v)
+    XrayTransparency = v
+    updateXrayMaterialAndTransparency()
+    if XrayEnabled then updateXray() end
+end)
+XraySection:AddDropdown("XrayMaterialDropdown", {
+    Title = "Material",
+    Values = {"Plastic", "Neon", "ForceField", "Glass", "SmoothPlastic"},
+    Default = "Neon",
+    Multi = false
+}):OnChanged(function(v)
+    local materialMap = {
+        Plastic = Enum.Material.Plastic,
+        Neon = Enum.Material.Neon,
+        ForceField = Enum.Material.ForceField,
+        Glass = Enum.Material.Glass,
+        SmoothPlastic = Enum.Material.SmoothPlastic
+    }
+    XrayMaterial = materialMap[v] or Enum.Material.Neon
+    updateXrayMaterialAndTransparency()
+    if XrayEnabled then updateXray() end
+end)
+
+local CameraSection = Tabs.World:AddSection("Camera Settings")
+CameraSection:AddToggle("UnlockThirdPerson", { Title = "Unlock Third Person (Zoomable)", Default = false }):OnChanged(function(v)
+    Config.UnlockThirdPerson = v
+    if v then unlockThirdPerson() else resetThirdPerson() end
+end)
+
+local VisualMechanicsSection = Tabs.World:AddSection("Screen Customization")
+VisualMechanicsSection:AddToggle("AutoWipe", { Title = "Auto-Wipe Screen Blood", Default = false }):OnChanged(function(v) Config.AutoWipeBlood = v end)
+VisualMechanicsSection:AddButton({ Title = "Instant Clean Screen", Callback = function()
+    local gui = LocalPlayer.PlayerGui:FindFirstChild("Gui")
+    if gui then
+        for _, v in pairs(gui:GetChildren()) do
+            if v.Name == "blood" then
+                v.Name = "clean"
+                TweenService:Create(v, TweenInfo.new(0.2), { ImageTransparency = 1 }):Play()
+                Debris:AddItem(v, 0.5)
+            end
+        end
+    end
+end })
+
+local WorldNVGSection = Tabs.World:AddSection("Night Vision & Gasmask")
+WorldNVGSection:AddButton({ Title = "Delete Gasmask", Callback = function()
+    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+    if playerGui then
+        local gasmaskGui = playerGui:FindFirstChild("Gasmask")
+        if gasmaskGui then gasmaskGui:Destroy() end
+    end
+end })
+WorldNVGSection:AddButton({ Title = "Break Gasmask", Callback = BreakGasmask })
+WorldNVGSection:AddToggle("InfiniteNightVisionToggle", { Title = "Infinite Night Vision", Default = false }):OnChanged(function(v)
+    Config.InfiniteNightVision = v
+    if v then
+        if InfiniteNVConnection then InfiniteNVConnection:Disconnect() end
+        if NVForcerConnection then NVForcerConnection:Disconnect() end
+        InfiniteNVConnection = RunService.Heartbeat:Connect(function()
+            if not Config.InfiniteNightVision then return end
+            local nvEffect = Lighting:FindFirstChild("__NVG_Effect")
+            if nvEffect and nvEffect.Enabled then
+                local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+                if playerGui then
+                    local nvHUD = playerGui:FindFirstChild("NightVisionHUD")
+                    if nvHUD and nvHUD:FindFirstChild("Container") then
+                        local container = nvHUD.Container
+                        local status = container:FindFirstChild("Status")
+                        if status then
+                            local batteryFrame = status:FindFirstChild("Battery")
+                            if batteryFrame then
+                                local bar = batteryFrame:FindFirstChild("Bar")
+                                local percentage = batteryFrame:FindFirstChild("Percentage")
+                                if bar and percentage then
+                                    bar.Size = UDim2.new(1, 0, bar.Size.Y.Scale, bar.Size.Y.Offset)
+                                    percentage.Text = "100%"
+                                end
+                            end
+                            local warnings = status:FindFirstChild("Warnings")
+                            if warnings then
+                                local lowPower = warnings:FindFirstChild("LowPower")
+                                if lowPower then lowPower.Visible = false end
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+        NVForcerConnection = RunService.Stepped:Connect(function()
+            if not Config.InfiniteNightVision then return end
+            local char = LocalPlayer.Character
+            if not char then return end
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if not hum or hum.Health <= 0 then return end
+            local nvEffect = Lighting:FindFirstChild("__NVG_Effect")
+            local nvBloom = Lighting:FindFirstChild("__NVG_Bloom")
+            local nvLight = char:FindFirstChild("__NVG_Light")
+            local headLight = char:FindFirstChild("Head") and char.Head:FindFirstChildOfClass("PointLight")
+            if nvEffect and not nvEffect.Enabled then nvEffect.Enabled = true end
+            if nvBloom and not nvBloom.Enabled then nvBloom.Enabled = true end
+            if nvLight and not nvLight.Enabled then nvLight.Enabled = true end
+            if headLight and not headLight.Enabled then headLight.Enabled = true end
+            Lighting.Ambient = Color3.fromRGB(180, 180, 180)
+            Lighting.OutdoorAmbient = Color3.fromRGB(180, 180, 180)
+            Lighting.Brightness = 2
+            Lighting.FogEnd = 999999999
+            Lighting.FogStart = 999999999
+            local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+            if playerGui then
+                local nvHUD = playerGui:FindFirstChild("NightVisionHUD")
+                if nvHUD and not nvHUD.Enabled then nvHUD.Enabled = true end
+                if nvHUD and nvHUD:FindFirstChild("Container") then
+                    local container = nvHUD.Container
+                    local status = container:FindFirstChild("Status")
+                    if status then
+                        local quality = status:FindFirstChild("Quality")
+                        if quality then
+                            local textLabel = quality:FindFirstChildOfClass("TextLabel")
+                            if textLabel and textLabel.Text ~= "QUALITY: IDEAL" then
+                                textLabel.Text = "QUALITY: IDEAL"
+                                textLabel.TextColor3 = Color3.fromRGB(120, 255, 120)
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+    else
+        if InfiniteNVConnection then InfiniteNVConnection:Disconnect() end
+        if NVForcerConnection then NVForcerConnection:Disconnect() end
+        Lighting.Ambient = OrigAmbient
+        Lighting.OutdoorAmbient = OrigOutdoorAmbient
+        Lighting.Brightness = OrigBrightness
+        Lighting.FogEnd = OrigFogEnd
+        Lighting.FogStart = OrigFogStart
+        local nvEffect = Lighting:FindFirstChild("__NVG_Effect")
+        if nvEffect then nvEffect.Enabled = false end
+        local nvBloom = Lighting:FindFirstChild("__NVG_Bloom")
+        if nvBloom then nvBloom.Enabled = false end
+        local char = LocalPlayer.Character
+        if char then
+            local nvLight = char:FindFirstChild("__NVG_Light")
+            if nvLight then nvLight.Enabled = false end
+            local head = char:FindFirstChild("Head")
+            if head then
+                local headLight = head:FindFirstChildOfClass("PointLight")
+                if headLight then headLight.Enabled = false end
+            end
+        end
+        local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+        if playerGui then
+            local nvHUD = playerGui:FindFirstChild("NightVisionHUD")
+            if nvHUD then nvHUD.Enabled = false end
+        end
+    end
+end)
+
+local MapRemoverSection = Tabs.World:AddSection("Map Remover")
+MapRemoverSection:AddButton({ Title = "Remove Elephant Foot (LookAtMe)", Callback = removeElephantFoot })
+
+-- ===================== FUN TAB (Animations) =====================
+local ToggleAnimSection = Tabs.Fun:AddSection("Idle Animations (Toggles)")
+for name, id in pairs(toggleAnims) do
+    ToggleAnimSection:AddToggle(name, {
+        Title = name,
+        Default = false,
+        Callback = function(v)
+            playToggleAnim(id, v)
+        end
+    })
+end
+
+local ButtonAnimSection = Tabs.Fun:AddSection("One-Shot Animations (Buttons)")
+for name, id in pairs(buttonAnims) do
+    ButtonAnimSection:AddButton({
+        Title = name,
+        Callback = function()
+            playButtonAnim(id)
+        end
+    })
+end
+
+-- ===================== ESP TAB =====================
+local GlobalESPSection = Tabs.ESP:AddSection("ESP Settings")
+GlobalESPSection:AddSlider("MaxDist", { Title = "Max ESP Distance", Min = 0, Max = 1000, Default = 250, Rounding = 0 }):OnChanged(function(v) Config.MaxDistance = v end)
+GlobalESPSection:AddSlider("FillTrans", { Title = "Highlight Fill Transparency", Min = 0, Max = 1, Default = 0.7, Rounding = 1 }):OnChanged(function(v) Config.HLFillTrans = v end)
+GlobalESPSection:AddSlider("OutTrans", { Title = "Highlight Outline Transparency", Min = 0, Max = 1, Default = 1.0, Rounding = 1 }):OnChanged(function(v) Config.HLOutlineTrans = v end)
+
+local PlayerESPSection = Tabs.ESP:AddSection("Player ESP")
+PlayerESPSection:AddToggle("HLPlayer", { Title = "Highlight Player", Default = false }):OnChanged(function(v) Config.HighlightPlayer = v end)
+PlayerESPSection:AddToggle("HPlayer", { Title = "ESP Health Player", Default = false }):OnChanged(function(v) Config.HealthPlayer = v end)
+PlayerESPSection:AddToggle("TPlayer", { Title = "Tracer Player", Default = false }):OnChanged(function(v) Config.TracerPlayer = v end)
+PlayerESPSection:AddColorpicker("CPPlayer", { Title = "Player ESP Color", Default = Config.ColorPlayer }):OnChanged(function(v) Config.ColorPlayer = v end)
+
+local FriendESPSection = Tabs.ESP:AddSection("Friend ESP [ALPHA]")
+FriendESPSection:AddToggle("HLFriends", { Title = "Highlight Friends", Default = false }):OnChanged(function(v) Config.HighlightFriends = v end)
+FriendESPSection:AddToggle("HFriends", { Title = "ESP Health Friend", Default = false }):OnChanged(function(v) Config.HealthFriends = v end)
+FriendESPSection:AddToggle("TFriends", { Title = "Tracer Friend", Default = false }):OnChanged(function(v) Config.TracerFriends = v end)
+FriendESPSection:AddColorpicker("CPFriends", { Title = "Friend ESP Color", Default = Config.ColorFriends }):OnChanged(function(v) Config.ColorFriends = v end)
+
+local MobESPSection = Tabs.ESP:AddSection("Entities ESP")
+MobESPSection:AddToggle("HLMobs", { Title = "Highlight Entities", Default = false }):OnChanged(function(v) Config.HighlightMobs = v end)
+MobESPSection:AddToggle("HMobs", { Title = "ESP Health EntitiesMobs", Default = false }):OnChanged(function(v) Config.HealthMobs = v end)
+MobESPSection:AddToggle("TMobs", { Title = "Tracer Entities", Default = false }):OnChanged(function(v) Config.TracerMobs = v end)
+MobESPSection:AddColorpicker("CPMobs", { Title = "Entities ESP Color", Default = Config.ColorMobs }):OnChanged(function(v) Config.ColorMobs = v end)
+
+-- ===================== GAME TAB =====================
+local GameSection = Tabs.Game:AddSection(".exe")
+GameSection:AddButton({
+    Title = "UNDEREQUIPPED [MUST BE IN A SECTOR]",
+    Callback = function()
+        local o = workspace:FindFirstChild("Classless_Badge")
+        if o then
+            local character = LocalPlayer.Character
+            if character and character:FindFirstChild("HumanoidRootPart") then
+                character:PivotTo(o:GetPivot() * CFrame.new(0, 2, 0))
+            end
+        end
+    end
+})
+
+local ChatLoggerEnabled = false
+local function ToggleNativeChat(enable)
+    if enable then
+        if TextChatService and TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
+            local chatWindow = TextChatService:FindFirstChild("ChatWindowConfiguration")
+            if chatWindow then chatWindow.Enabled = true end
+            local ui = CoreGui:FindFirstChild("TextChat")
+            if ui then ui.Enabled = true end
+            pcall(function()
+                TextChatService:FindFirstChild("ChatWindowParent"):FindFirstChild("ChatWindow").Visible = true
+            end)
+        else
+            local chatGui = LocalPlayer.PlayerGui:FindFirstChild("Chat")
+            if chatGui then chatGui.Enabled = true end
+            local legacy = CoreGui:FindFirstChild("Chat")
+            if legacy then legacy.Enabled = true end
+        end
+    end
+end
+
+GameSection:AddToggle("ChatLoggerToggle", { Title = "Show Native Chat (CoreGui)", Default = false }):OnChanged(function(v)
+    ChatLoggerEnabled = v
+    ToggleNativeChat(v)
+    if v then
+        Fluent:Notify({ Title = "Chat", Content = "Native chat interface enabled", Duration = 2 })
+    else
+        Fluent:Notify({ Title = "Chat", Content = "Native chat interface disabled", Duration = 2 })
+    end
+end)
+
+local DevPanelsSection = Tabs.Game:AddSection("Developer Debug Panels")
+DevPanelsSection:AddToggle("DebugPanelTgl", { Title = "Live Debug Stats Panel", Default = false }):OnChanged(function(v) Config.ShowDebugPanel = v end)
+DevPanelsSection:AddToggle("ShowCoords", { Title = "Show Coordinates", Default = false }):OnChanged(function(v) Config.ShowCoordinates = v end)
+
+-- ===================== ABOUT TAB =====================
+local AboutSection = Tabs.About:AddSection("Credits & Links")
+AboutSection:AddButton({ Title = "Copy Discord Server Link", Callback = function()
+    local link = "https://discord.gg/xTP4qNx2"
+    if setclipboard then setclipboard(link)
+    else pcall(function() local tb = Instance.new("TextBox"); tb.Text = link; tb:CaptureFocus(); tb:ReleaseFocus(); tb:Destroy() end) end
+    Fluent:Notify({ Title = "Discord", Content = "Discord server link copied!", Duration = 3 })
+end })
+AboutSection:AddButton({ Title = "Copy Rscripts.net Link", Callback = function()
+    local link = "https://rscripts.net/script/examination-oBz7"
+    if setclipboard then setclipboard(link)
+    else pcall(function() local tb = Instance.new("TextBox"); tb.Text = link; tb:CaptureFocus(); tb:ReleaseFocus(); tb:Destroy() end) end
+    Fluent:Notify({ Title = "Rscripts.net", Content = "Rscript Link copied", Duration = 3 })
+end })
+AboutSection:AddParagraph({ Title = "Crédits", Content = "Main Developer : @x4tmq\nScript : Sentinel v0.27.42\n\nThanks for using my script!" })
+
+-- ===================== COORDINATES & DEBUG PANEL =====================
+local function updateCoordinatesHUD()
+    if Config.ShowCoordinates then
+        if not testerCFGui or not testerCFGui.Parent then
+            local pGui = LocalPlayer:FindFirstChild("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui")
+            testerCFGui = Instance.new("ScreenGui", pGui)
+            testerCFGui.Name = "TesterCFGui"
+            testerCFGui.IgnoreGuiInset = true
+            testerCFGui.ResetOnSpawn = false
+            testerCFLabel = Instance.new("TextLabel", testerCFGui)
+            testerCFLabel.BackgroundTransparency = 1
+            testerCFLabel.Font = Enum.Font.Code
+            testerCFLabel.TextSize = 18
+            testerCFLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+            testerCFLabel.AnchorPoint = Vector2.new(0.5, 0)
+            testerCFLabel.Position = UDim2.new(0.5, 0, 0.12, 0)
+            testerCFLabel.Size = UDim2.new(0, 400, 0, 20)
+        end
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if hrp then testerCFLabel.Text = string.format("cf: X %.2f  Y %.2f  Z %.2f", hrp.Position.X, hrp.Position.Y, hrp.Position.Z)
+        else testerCFLabel.Text = "CPosition: n/a" end
+    else
+        if testerCFGui then testerCFGui:Destroy(); testerCFGui = nil; testerCFLabel = nil end
+    end
+end
+
+local function createRow(parent, name, text, isTitle)
+    local label = Instance.new("TextLabel", parent)
+    label.Name = name
+    label.BackgroundTransparency = 1
+    label.Size = UDim2.new(1, -8, 0, isTitle and 20 or 18)
+    label.Font = Enum.Font.Code
+    label.TextSize = isTitle and 15 or 13
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.TextColor3 = isTitle and Color3.fromRGB(255, 230, 160) or Color3.fromRGB(230, 230, 230)
+    label.Text = text
+    if not isTitle then debugLabelsCache[name] = label end
+end
+
+local function setBoolRow(label, title, val)
+    if not label then return end
+    label.TextColor3 = val and Color3.fromRGB(120, 255, 120) or Color3.fromRGB(255, 120, 120)
+    label.Text = string.format("%s: %s", title, val and "on" or "off")
+end
+
+local function getGunUIAndTool()
+    local char = LocalPlayer.Character
+    local tool = char and char:FindFirstChildWhichIsA("Tool")
+    if not tool or not tool:GetAttribute("IsGun") then return nil, nil end
+    local pGui = LocalPlayer:FindFirstChild("PlayerGui")
+    return pGui and pGui:FindFirstChild(tool.Name), tool
+end
+
+local function updateLiveDebugPanel()
+    if Config.ShowDebugPanel then
+        if not testerDebugGui or not testerDebugGui.Parent then
+            local pGui = LocalPlayer:FindFirstChild("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui")
+            testerDebugGui = Instance.new("ScreenGui", pGui)
+            testerDebugGui.Name = "TesterDebugGui"
+            testerDebugPanel = Instance.new("Frame", testerDebugGui)
+            testerDebugPanel.Name = "Panel"
+            testerDebugPanel.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+            testerDebugPanel.Position = UDim2.new(0, 20, 0.2, 0)
+            testerDebugPanel.Size = UDim2.new(0, 260, 0, 340)
+            Instance.new("UICorner", testerDebugPanel).CornerRadius = UDim.new(0, 6)
+            local stroke = Instance.new("UIStroke", testerDebugPanel)
+            stroke.Color = Color3.fromRGB(90, 90, 90)
+            stroke.Thickness = 1
+            local list = Instance.new("UIListLayout", testerDebugPanel)
+            list.Padding = UDim.new(0, 2)
+            list.SortOrder = Enum.SortOrder.LayoutOrder
+            createRow(testerDebugPanel, "title", " [Sentinel Debug System]", true)
+            createRow(testerDebugPanel, "game_updated", " last update: " .. GameLastUpdateString, false)
+            createRow(testerDebugPanel, "header_player", " -- PLAYER ENGINE --", true)
+            createRow(testerDebugPanel, "p_health", " health: n/a", false)
+            createRow(testerDebugPanel, "p_pos", " pos: n/a", false)
+            createRow(testerDebugPanel, "p_moveSpeed", " movespeed: n/a", false)
+            createRow(testerDebugPanel, "p_velocity", " vel mag: n/a", false)
+            createRow(testerDebugPanel, "p_isGrounded", " grounded: n/a", false)
+            createRow(testerDebugPanel, "header_gun", " -- GUN ENGINE --", true)
+            createRow(testerDebugPanel, "g_name", " gun: none", false)
+            createRow(testerDebugPanel, "g_mode", " mode: n/a", false)
+            createRow(testerDebugPanel, "g_ammo", " ammo: n/a", false)
+            createRow(testerDebugPanel, "g_state", " state: n/a", false)
+        end
+        local char = LocalPlayer.Character
+        local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if humanoid and hrp then
+            debugLabelsCache.p_health.Text = string.format(" health: %d / %d", math.floor(humanoid.Health), math.floor(humanoid.MaxHealth))
+            debugLabelsCache.p_pos.Text = string.format(" pos: %.1f, %.1f, %.1f", hrp.Position.X, hrp.Position.Y, hrp.Position.Z)
+            debugLabelsCache.p_moveSpeed.Text = string.format(" movespeed: %.1f", Vector3.new(hrp.Velocity.X, 0, hrp.Velocity.Z).Magnitude)
+            debugLabelsCache.p_velocity.Text = string.format(" vel mag: %.1f", hrp.Velocity.Magnitude)
+            setBoolRow(debugLabelsCache.p_isGrounded, " grounded", humanoid.FloorMaterial ~= Enum.Material.Air)
+        end
+        local gunGui, gunTool = getGunUIAndTool()
+        if gunTool then
+            debugLabelsCache.g_name.Text = " gun: " .. gunTool.Name
+            local gMode, gClip, gAmmo = "n/a", "n/a", "n/a"
+            if gunGui and gunGui:FindFirstChild("Data") then
+                local data = gunGui.Data
+                if data:FindFirstChild("mode") then gMode = data.mode.Text end
+                if data:FindFirstChild("clip") then gClip = data.clip.Text end
+                if data:FindFirstChild("ammo") then gAmmo = data.ammo.Text end
+            end
+            debugLabelsCache.g_mode.Text = " mode: " .. gMode
+            debugLabelsCache.g_ammo.Text = " ammo: clip " .. gClip .. " | res " .. gAmmo
+            local states = {}
+            if gClip == "--" or gunTool:GetAttribute("Reloading") == true then table.insert(states, "reloading") end
+            if Camera and Camera.FieldOfView < 70 then table.insert(states, "aiming") end
+            if gunTool:GetAttribute("Silencer") then table.insert(states, "silenced") end
+            debugLabelsCache.g_state.Text = " state: " .. (#states == 0 and "idle" or table.concat(states, ", "))
+        else
+            debugLabelsCache.g_name.Text = " gun: none"
+            debugLabelsCache.g_mode.Text = " mode: n/a"
+            debugLabelsCache.g_ammo.Text = " ammo: n/a"
+            debugLabelsCache.g_state.Text = " state: unequipped"
+        end
+    else
+        if testerDebugGui then testerDebugGui:Destroy(); testerDebugGui = nil; testerDebugPanel = nil; table.clear(debugLabelsCache) end
+    end
+end
+
+UserInputService.InputBegan:Connect(function(input, processed)
+    if processed then return end
+    if input.KeyCode == Enum.KeyCode.Equals then
+        Config.ShowDebugPanel = not Config.ShowDebugPanel
+        local toggleOpt = Fluent.Options.DebugPanelTgl
+        if toggleOpt then toggleOpt:SetValue(Config.ShowDebugPanel) end
+    end
+end)
+
+-- ===================== FIN =====================
 Window:SelectTab(1)
 Fluent:Notify({ Title = "Sentinel v0.27.42", Content = "Script Loaded. Enjoy :D", Duration = 5 })
