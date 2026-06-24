@@ -1,10 +1,3 @@
---[[
-  Sentinel - Examination
-  Version : 4.00.00
-  Ajout : Fake Infection (Controllable / Non Controllable) – AUCUNE SIMPLIFICATION
-]]
-
--- ===================== SERVICES =====================
 local Players = game:GetService("Players")
 local Lighting = game:GetService("Lighting")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -21,8 +14,8 @@ local Camera = workspace.CurrentCamera
 local TextChatService = game:GetService("TextChatService")
 local CoreGui = game:GetService("CoreGui")
 local Teams = game:GetService("Teams")
+local VirtualInputManager = game:GetService("VirtualInputManager")
 
--- ===================== UTILITAIRES =====================
 local function isPlayerCharacter(model)
     if not model or not model:IsA("Model") then return false end
     return Players:GetPlayerFromCharacter(model) ~= nil
@@ -56,13 +49,12 @@ if LocalPlayer.Character then
     hideLocalHead()
 end
 
--- ===================== CONFIG =====================
 local Config = {
     SpeedHackEnabled = false,
     WalkSpeedValue = 16,
     InfiniteStaminaEnabled = false,
     JumpPowerEnabled = false,
-    JumpPowerValue = 50,
+    JumpPowerValue = 30,
     InfiniteJump = false,
     JumpBypassActive = false,
     FlyEnabled = false,
@@ -100,18 +92,24 @@ local Config = {
     FakeDeath = false,
     FakeInjured = false,
     InfiniteNightVision = false,
-    AimlockEnabled = false,
-    WallCheck = true,
-    FOVCircleSize = 150,
-    LockPower = 50,
-    BodyPartLock = "Head",
     SilencerEnabled = false,
     CharacterName = "",
     CharacterRank = "",
     TagColor = Color3.fromRGB(80, 109, 84),
     Team = "Menlo",
     StaggerEnabled = true,
-    InfectionMode = "Non Controllable",
+    InfectionActive = false,
+    AnimatorEnabled = false,
+    AnimatorIdleAnimId = nil,
+    AnimatorWalkAnimId = nil,
+    AnimatorRunAnimId = nil,
+    GodmodeEnabled = false,
+    GodmodeHealthThreshold = 10,
+    HighlightLandmines = false,
+    HighlightGenerators = false,
+    ColorLandmines = Color3.fromRGB(255, 255, 0),
+    ColorGenerators = Color3.fromRGB(0, 255, 255),
+    IgnoreLandmine = false,
 }
 
 local ValidCombatTools = {
@@ -148,7 +146,6 @@ local WeaponAnimations = {
     Default = "rbxassetid://74792106188393"
 }
 
--- ===================== VARIABLES GLOBALES =====================
 local HitboxEnabled = false
 local HitboxModifiedHeads = {}
 local flyBV, flyBG, flySeat, flyWeld, flyActive = nil, nil, nil, nil, false
@@ -183,9 +180,6 @@ local NVForcerConnection = nil
 
 local isShiftHeld = false
 
-local CurrentTarget = nil
-local FOVCircle = nil
-
 local AutoShieldRemovalActive = false
 local AutoShieldRemovalConnection = nil
 
@@ -196,10 +190,42 @@ local PunchEvent = ReplicatedStorage:FindFirstChild("PunchEvent")
 local gameAee = Lighting:FindFirstChild("aee")
 local gameRadiationTint = Lighting:FindFirstChild("RadiationTint")
 
--- ===================== INFECTION SPECIFICS =====================
+local GodmodePreviousPosition = nil
+local GodmodeTeleported = false
+
+local LandmineHighlights = {}
+local GeneratorHighlights = {}
+
+local IgnoreLandmineConnection = nil
+local landmineHitEvent = ReplicatedStorage:FindFirstChild("landmineHit")
+local originalLandmineFire = nil
+
 local InfectionActive = false
-local InfectionMode = "Non Controllable"
 local InfectionCleanupFunctions = {}
+local InfectionMode = "Controllable"
+
+local INFECTION_ANIM_INJURED = "rbxassetid://94302036679429"
+local INFECTION_ANIM_HEAD_SHAKE = "rbxassetid://118621065272904"
+local INFECTION_ANIM_COUGH = "rbxassetid://111615919261340"
+local INFECTION_ANIM_UNSTABLE = "rbxassetid://9146103628"
+local INFECTION_ANIM_FALL1 = "rbxassetid://99985127815659"
+local INFECTION_ANIM_LURKER_AWAKE = "rbxassetid://138937044212276"
+local INFECTION_ANIM_IDLE = "rbxassetid://95464797704887"
+local INFECTION_ANIM_WALK = "rbxassetid://87989829896123"
+local INFECTION_ANIM_RUN = "rbxassetid://111821553591135"
+
+local infectionInjuredTrack = nil
+local infectionHeadShakeTrack = nil
+local infectionCoughTrack = nil
+local infectionUnstableTrack = nil
+local infectionFallTrack = nil
+local infectionLurkerTrack = nil
+local infectionIdleTrack = nil
+local infectionWalkTrack = nil
+local infectionRunTrack = nil
+local infectionCurrentState = nil
+local infectionTransformDone = false
+local infectionIsRunning = false
 
 local function BreakGasmask()
     local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
@@ -298,7 +324,7 @@ local function spawnDemonicSymbol(mass)
         infectionEffectsGui.Parent = playerGui
     end
 
-    local count = mass and 3 or 1
+    local count = mass and 5 or 3
     for _ = 1, count do
         local label = Instance.new("TextLabel")
         label.Text = demonicChars[math.random(1, #demonicChars)]
@@ -325,6 +351,7 @@ end
 
 local function stopInfection()
     InfectionActive = false
+    infectionIsRunning = false
     showBloodVignette(false)
     local cc = Lighting:FindFirstChild("InfectionRedTint")
     if cc then cc:Destroy() end
@@ -336,16 +363,30 @@ local function stopInfection()
         end
         InfectionCleanupFunctions = {}
     end
+    local tracks = {infectionInjuredTrack, infectionHeadShakeTrack, infectionCoughTrack, infectionUnstableTrack,
+                    infectionFallTrack, infectionLurkerTrack, infectionIdleTrack, infectionWalkTrack, infectionRunTrack}
+    for _, t in ipairs(tracks) do
+        if t then t:Stop(); t = nil end
+    end
+    infectionTransformDone = false
+    infectionCurrentState = nil
     local char = LocalPlayer.Character
     if char then
         local hum = char:FindFirstChildOfClass("Humanoid")
         if hum then
+            hum.PlatformStand = false
+            hum.WalkSpeed = Config.SpeedHackEnabled and Config.WalkSpeedValue or 9
+            hum.JumpPower = Config.JumpPowerEnabled and Config.JumpPowerValue or 50
             local animator = hum:FindFirstChildOfClass("Animator")
             if animator then
                 for _, track in pairs(animator:GetPlayingAnimationTracks()) do
                     track:Stop()
                 end
             end
+        end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            hrp.Anchored = false
         end
         local clientScripts = char:FindFirstChild("ClientScripts")
         if clientScripts then
@@ -358,219 +399,169 @@ end
 local function startInfectionSequence()
     if InfectionActive then return end
     InfectionActive = true
-    InfectionMode = Config.InfectionMode or "Non Controllable"
+    infectionIsRunning = true
+    InfectionMode = "Controllable"
 
     BreakGasmask()
     showBloodVignette(true)
 
+    local char = LocalPlayer.Character
+    if not char then InfectionActive = false; infectionIsRunning = false; return end
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not humanoid then InfectionActive = false; infectionIsRunning = false; return end
+
+    humanoid.Health = 1
+
+    infectionInjuredTrack = playAnimationOnHumanoid(INFECTION_ANIM_INJURED, true)
+    infectionHeadShakeTrack = playAnimationOnHumanoid(INFECTION_ANIM_HEAD_SHAKE, true)
+
     local redTint = createRedTint()
     redTint.TintColor = Color3.fromRGB(255, 255, 255)
 
-    local char = LocalPlayer.Character
-    if not char then InfectionActive = false return end
-    local humanoid = char:FindFirstChildOfClass("Humanoid")
-    if not humanoid then InfectionActive = false return end
+    local startTime = tick()
+    local coughTimer = tick()
+    local redStart = 40
+    local demonStart = 45
+    local transformTime = 60
 
-    local isRunning = true
-    local headShakeTrack = nil
-    local injuredTrack = nil
-    local coughTrack = nil
-    local turnTrack = nil
-    local lurkerTrack = nil
-    local infectionFallTrack = nil
-    local suicideTrack = nil
-    local idleTrack = nil
-    local walkTrack = nil
-    local runTrack = nil
+    local function grand2Loop()
+        while infectionIsRunning and humanoid and humanoid.Health > 0 do
+            local elapsed = tick() - startTime
 
-    local function cleanup()
-        isRunning = false
+            if tick() - coughTimer >= 10 then
+                coughTimer = tick()
+                if infectionCoughTrack then infectionCoughTrack:Stop() end
+                infectionCoughTrack = playAnimationOnHumanoid(INFECTION_ANIM_COUGH, false)
+                local sound = Instance.new("Sound")
+                sound.SoundId = "rbxassetid://93090593281658"
+                sound.Volume = 1
+                sound.Parent = char
+                sound:Play()
+                Debris:AddItem(sound, 2)
+            end
+
+            if not infectionUnstableTrack or not infectionUnstableTrack.IsPlaying then
+                if infectionUnstableTrack then infectionUnstableTrack:Stop() end
+                infectionUnstableTrack = playAnimationOnHumanoid(INFECTION_ANIM_UNSTABLE, true)
+            end
+
+            if elapsed >= redStart then
+                local progress = math.min((elapsed - redStart) / 30, 1)
+                redTint.TintColor = Color3.fromRGB(255, 255 - math.floor(progress * 255), 255 - math.floor(progress * 255))
+            end
+
+            if elapsed >= demonStart then
+                spawnDemonicSymbol(true)
+            end
+
+            if elapsed >= transformTime then
+                break
+            end
+
+            task.wait(0.5)
+        end
+    end
+
+    task.spawn(grand2Loop)
+
+    task.wait(transformTime)
+
+    if not infectionIsRunning or not humanoid or humanoid.Health <= 0 then
+        stopInfection()
+        return
+    end
+
+    -- Plus de téléportation au sol ni d'ancrage
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if hrp then
+        -- On ne modifie plus la position ni l'ancrage
+    end
+
+    if infectionCoughTrack then infectionCoughTrack:Stop(); infectionCoughTrack = nil end
+    if infectionUnstableTrack then infectionUnstableTrack:Stop(); infectionUnstableTrack = nil end
+    if infectionInjuredTrack then infectionInjuredTrack:Stop(); infectionInjuredTrack = nil end
+    if infectionHeadShakeTrack then infectionHeadShakeTrack:Stop(); infectionHeadShakeTrack = nil end
+
+    infectionFallTrack = playAnimationOnHumanoid(INFECTION_ANIM_FALL1, false, function()
+        if infectionIsRunning then
+            if infectionLurkerTrack then infectionLurkerTrack:Stop() end
+            infectionLurkerTrack = playAnimationOnHumanoid(INFECTION_ANIM_LURKER_AWAKE, false, function()
+                if hrp then hrp.Anchored = false end
+                humanoid.PlatformStand = false
+                humanoid.WalkSpeed = 9
+                humanoid.JumpPower = 50
+                infectionTransformDone = true
+                infectionCurrentState = nil
+
+                local function stateMachine()
+                    while infectionIsRunning and humanoid and humanoid.Health > 0 do
+                        if hrp then
+                            local velocity = hrp.Velocity
+                            local horizontalVel = Vector3.new(velocity.X, 0, velocity.Z)
+                            local speed = horizontalVel.Magnitude
+                            local newState
+                            if isShiftHeld and speed > 2 then
+                                newState = "run"
+                            elseif speed > 0.5 then
+                                newState = "walk"
+                            else
+                                newState = "idle"
+                            end
+                            if newState ~= infectionCurrentState then
+                                infectionCurrentState = newState
+                                if infectionIdleTrack then infectionIdleTrack:Stop(); infectionIdleTrack = nil end
+                                if infectionWalkTrack then infectionWalkTrack:Stop(); infectionWalkTrack = nil end
+                                if infectionRunTrack then infectionRunTrack:Stop(); infectionRunTrack = nil end
+                                if newState == "idle" then
+                                    infectionIdleTrack = playAnimationOnHumanoid(INFECTION_ANIM_IDLE, true)
+                                elseif newState == "walk" then
+                                    infectionWalkTrack = playAnimationOnHumanoid(INFECTION_ANIM_WALK, true)
+                                elseif newState == "run" then
+                                    infectionRunTrack = playAnimationOnHumanoid(INFECTION_ANIM_RUN, true)
+                                end
+                            end
+                        end
+                        task.wait(0.2)
+                    end
+                end
+                task.spawn(stateMachine)
+
+                task.wait(60)
+                if infectionIsRunning and humanoid and humanoid.Health > 0 then
+                    humanoid.Health = 0
+                end
+                stopInfection()
+            end)
+        end
+    end)
+
+    humanoid.Died:Connect(function()
+        stopInfection()
+    end)
+
+    table.insert(InfectionCleanupFunctions, function()
+        infectionIsRunning = false
         InfectionActive = false
-        if headShakeTrack then headShakeTrack:Stop(); headShakeTrack = nil end
-        if injuredTrack then injuredTrack:Stop(); injuredTrack = nil end
-        if coughTrack then coughTrack:Stop(); coughTrack = nil end
-        if turnTrack then turnTrack:Stop(); turnTrack = nil end
-        if lurkerTrack then lurkerTrack:Stop(); lurkerTrack = nil end
-        if infectionFallTrack then infectionFallTrack:Stop(); infectionFallTrack = nil end
-        if suicideTrack then suicideTrack:Stop(); suicideTrack = nil end
-        if idleTrack then idleTrack:Stop(); idleTrack = nil end
-        if walkTrack then walkTrack:Stop(); walkTrack = nil end
-        if runTrack then runTrack:Stop(); runTrack = nil end
+        if hrp then hrp.Anchored = false end
+        if humanoid then
+            humanoid.PlatformStand = false
+            humanoid.WalkSpeed = Config.SpeedHackEnabled and Config.WalkSpeedValue or 9
+            humanoid.JumpPower = Config.JumpPowerEnabled and Config.JumpPowerValue or 50
+        end
+        local tracks = {infectionInjuredTrack, infectionHeadShakeTrack, infectionCoughTrack, infectionUnstableTrack,
+                        infectionFallTrack, infectionLurkerTrack, infectionIdleTrack, infectionWalkTrack, infectionRunTrack}
+        for _, t in ipairs(tracks) do
+            if t then t:Stop(); t = nil end
+        end
+        infectionTransformDone = false
         showBloodVignette(false)
         local cc = Lighting:FindFirstChild("InfectionRedTint")
         if cc then cc:Destroy() end
         local effectsGui = LocalPlayer.PlayerGui:FindFirstChild("InfectionEffectsGui")
         if effectsGui then effectsGui:Destroy() end
-        local clientScripts = char and char:FindFirstChild("ClientScripts")
-        if clientScripts then
-            local stagger = clientScripts:FindFirstChild("Stagger")
-            if stagger then stagger.Disabled = not Config.StaggerEnabled end
-        end
-        if humanoid then
-            local animator = humanoid:FindFirstChildOfClass("Animator")
-            if animator then
-                for _, track in pairs(animator:GetPlayingAnimationTracks()) do
-                    track:Stop()
-                end
-            end
-        end
-    end
-
-    table.insert(InfectionCleanupFunctions, cleanup)
-
-    task.spawn(function()
-        task.wait(0.5)
-
-        headShakeTrack = playAnimationOnHumanoid("rbxassetid://118621065272904", true)
-
-        local injuredRunning = true
-        local function updateIdleAnimation()
-            while injuredRunning and humanoid and humanoid.Health > 0 do
-                local hrp = char:FindFirstChild("HumanoidRootPart")
-                local velocity = hrp and hrp.Velocity or Vector3.new()
-                local horizontalVel = Vector3.new(velocity.X, 0, velocity.Z)
-                local isIdle = horizontalVel.Magnitude < 0.5 and humanoid:GetState() ~= Enum.HumanoidStateType.Jumping and humanoid:GetState() ~= Enum.HumanoidStateType.Freefall
-                if isIdle then
-                    if not injuredTrack or not injuredTrack.IsPlaying then
-                        if injuredTrack then injuredTrack:Stop() end
-                        injuredTrack = playAnimationOnHumanoid("rbxassetid://94302036679429", true)
-                    end
-                else
-                    if injuredTrack and injuredTrack.IsPlaying then
-                        injuredTrack:Stop()
-                        injuredTrack = nil
-                    end
-                end
-                task.wait(0.2)
-            end
-        end
-        task.spawn(updateIdleAnimation)
-
-        local coughDuration = (InfectionMode == "Non Controllable") and 60 or 75
-        local coughEndTime = tick() + coughDuration
-        local function coughLoop()
-            while tick() < coughEndTime and humanoid and humanoid.Health > 0 and isRunning do
-                task.wait(15)
-                if not isRunning or not humanoid or humanoid.Health <= 0 then break end
-                if coughTrack then coughTrack:Stop() end
-                coughTrack = playAnimationOnHumanoid("rbxassetid://111615919261340", false)
-            end
-        end
-        task.spawn(coughLoop)
-
-        local startTime = tick()
-
-        local function demonicAndRedLoop()
-            local redStart = 45
-            local demonStart = 45
-            local demonInterval = (InfectionMode == "Non Controllable") and 1.5 or 4
-            local demonMass = (InfectionMode == "Non Controllable")
-
-            while isRunning and humanoid and humanoid.Health > 0 do
-                local elapsed = tick() - startTime
-                if elapsed >= redStart then
-                    local progress = math.min((elapsed - redStart) / 30, 1)
-                    redTint.TintColor = Color3.fromRGB(255, 255 - math.floor(progress * 255), 255 - math.floor(progress * 255))
-                end
-                if elapsed >= demonStart then
-                    spawnDemonicSymbol(demonMass)
-                end
-                task.wait(demonInterval)
-            end
-        end
-        task.spawn(demonicAndRedLoop)
-
-        if InfectionMode == "Non Controllable" then
-            task.wait(75)
-            if not isRunning or not humanoid or humanoid.Health <= 0 then cleanup() return end
-            infectionFallTrack = playAnimationOnHumanoid("rbxassetid://99985127815659", false, function()
-                if isRunning then
-                    local head = char:FindFirstChild("Head")
-                    if head then
-                        head:Destroy()
-                    end
-                    humanoid.Health = 0
-                    cleanup()
-                end
-            end)
-        else
-            task.wait(45)
-            if not isRunning or not humanoid or humanoid.Health <= 0 then cleanup() return end
-            turnTrack = playAnimationOnHumanoid("rbxassetid://136775254837264", false, function()
-                local sound = Instance.new("Sound")
-                sound.SoundId = "rbxassetid://124481386119913"
-                sound.Volume = 1
-                sound.Parent = char
-                sound:Play()
-                Debris:AddItem(sound, 5)
-
-                task.wait(2)
-                if not isRunning or not humanoid or humanoid.Health <= 0 then cleanup() return end
-                lurkerTrack = playAnimationOnHumanoid("rbxassetid://138937044212276", false, function()
-                    redTint.TintColor = Color3.fromRGB(255, 255, 255)
-                    if injuredTrack then injuredTrack:Stop(); injuredTrack = nil end
-                    if headShakeTrack then headShakeTrack:Stop(); headShakeTrack = nil end
-                    isRunning = false
-
-                    local function updateControllableAnimations()
-                        while humanoid and humanoid.Health > 0 do
-                            local hrp = char:FindFirstChild("HumanoidRootPart")
-                            local velocity = hrp and hrp.Velocity or Vector3.new()
-                            local horizontalVel = Vector3.new(velocity.X, 0, velocity.Z)
-                            local speed = horizontalVel.Magnitude
-                            local isMoving = speed > 0.5
-                            local isRunningState = (isShiftHeld and speed > 2)
-
-                            if isRunningState then
-                                if runTrack then runTrack:Stop() end
-                                if walkTrack then walkTrack:Stop() end
-                                if idleTrack then idleTrack:Stop() end
-                                runTrack = playAnimationOnHumanoid("rbxassetid://95054120636955", true)
-                            elseif isMoving then
-                                if runTrack then runTrack:Stop() end
-                                if walkTrack then walkTrack:Stop() end
-                                if idleTrack then idleTrack:Stop() end
-                                walkTrack = playAnimationOnHumanoid("rbxassetid://97147187591899", true)
-                            else
-                                if runTrack then runTrack:Stop() end
-                                if walkTrack then walkTrack:Stop() end
-                                if idleTrack then idleTrack:Stop() end
-                                idleTrack = playAnimationOnHumanoid("rbxassetid://108552997989260", true)
-                            end
-                            task.wait(0.2)
-                        end
-                    end
-                    task.spawn(updateControllableAnimations)
-
-                    task.wait(30)
-                    if not humanoid or humanoid.Health <= 0 then cleanup() return end
-                    task.spawn(function()
-                        local demonStart2 = tick()
-                        while isRunning and humanoid and humanoid.Health > 0 do
-                            spawnDemonicSymbol(false)
-                            task.wait(4)
-                        end
-                    end)
-
-                    task.wait(45)
-                    if not humanoid or humanoid.Health <= 0 then cleanup() return end
-                    suicideTrack = playAnimationOnHumanoid("rbxassetid://82480275101558", false, function()
-                        humanoid.Health = 0
-                        cleanup()
-                    end)
-                end)
-            end)
-        end
-
-        humanoid.Died:Connect(function()
-            cleanup()
-        end)
     end)
 end
 
--- ===================== FONCTIONS EXISTANTES (TOUTES) =====================
-
--- ApplyHitboxToHead / UpdateAllHitboxes
 local function ApplyHitboxToHead(part, enable)
     if not part or not part:IsA("BasePart") then return end
     if part.Name ~= "Head" then return end
@@ -631,7 +622,6 @@ Workspace.DescendantAdded:Connect(function(desc)
     end
 end)
 
--- Fly
 local function cleanFly()
     if flyBV then flyBV:Destroy(); flyBV = nil end
     if flyBG then flyBG:Destroy(); flyBG = nil end
@@ -730,7 +720,6 @@ RunService.Heartbeat:Connect(function(dt)
     end
 end)
 
--- Xray
 local XrayEnabled = false
 local XrayDistance = 200
 local XrayMaterial = Enum.Material.Neon
@@ -816,7 +805,6 @@ local function updateXray()
     end)
 end
 
--- Silencer
 local function updateSilencers(state)
     local backpack = LocalPlayer:FindFirstChild("Backpack")
     if backpack then
@@ -876,7 +864,6 @@ task.spawn(function()
     if backpack then listenToBackpack(backpack) end
 end)
 
--- Nametags & Team
 local function applyNametags(char)
     local head = char and char:FindFirstChild("Head")
     if not head then return end
@@ -936,7 +923,6 @@ if LocalPlayer.Character then
     end
 end
 
--- Fake Injured
 local function toggleFakeInjured()
     if Config.FakeInjured then
         local char = LocalPlayer.Character
@@ -996,7 +982,6 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
--- Fake Death
 local fakeDeathBV = nil
 local fakeDeathBP = nil
 
@@ -1041,7 +1026,6 @@ local function toggleFakeDeath()
     end
 end
 
--- Suicide avec animation
 local function suicideWithAnimation()
     local char = LocalPlayer.Character
     if not char then return end
@@ -1056,7 +1040,6 @@ local function suicideWithAnimation()
     humanoid.Health = 0
 end
 
--- Remove Elephant Foot
 local function removeElephantFoot()
     local target = workspace:FindFirstChild("LookAtMe")
     if target then
@@ -1067,7 +1050,57 @@ local function removeElephantFoot()
     end
 end
 
--- Teleport
+local function removeArabicDud()
+    local arabic = workspace:FindFirstChild("Arabic")
+    if arabic then
+        arabic:Destroy()
+        Fluent:Notify({ Title = "Success", Content = "Arabic dud removed", Duration = 3 })
+    else
+        Fluent:Notify({ Title = "Failed", Content = "Arabic dud not found", Duration = 3 })
+    end
+end
+
+local function removeLobbyMusic()
+    local found = 0
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj.Name == "Radio" then
+            obj:Destroy()
+            found = found + 1
+        end
+    end
+    Fluent:Notify({ Title = "Success", Content = "Removed "..found.." Radio(s)", Duration = 3 })
+end
+
+local function deleteAllDoors()
+    local gameDoors = workspace:FindFirstChild("GameDoors")
+    if not gameDoors then
+        Fluent:Notify({ Title = "Error", Content = "GameDoors not found", Duration = 3 })
+        return
+    end
+    local count = 0
+    for _, gen in ipairs(gameDoors:GetChildren()) do
+        if gen.Name:match("Generator%d") then
+            local doorsToOpen = gen:FindFirstChild("DoorsToOpen")
+            if doorsToOpen then
+                doorsToOpen:Destroy()
+                count = count + 1
+            end
+        end
+    end
+    Fluent:Notify({ Title = "Success", Content = "Deleted "..count.." DoorsToOpen folder(s)", Duration = 3 })
+end
+
+local function deleteAllLandmines()
+    local count = 0
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj.Name == "Landmine" and obj:IsA("Model") then
+            obj:Destroy()
+            count = count + 1
+        end
+    end
+    Fluent:Notify({ Title = "Success", Content = "Deleted "..count.." landmines", Duration = 3 })
+end
+
 local teleportPoints = {
     ["Sector 1"] = {
         {"Spawn", Vector3.new(-55, -33, -1410)},
@@ -1109,7 +1142,20 @@ local function teleportTo(position)
     end
 end
 
--- Animations (toggles et buttons)
+local function teleportToCFrame(cf)
+    local char = LocalPlayer.Character
+    if char and char:FindFirstChild("HumanoidRootPart") then
+        char:PivotTo(cf)
+    end
+end
+
+local RestrictedServerCFrame = CFrame.new(
+    -80.9715881, -28.5348167, -1419.7843,
+    0.996191859, 0, 0.0871884301,
+    0, 1, 0,
+    -0.0871884301, 0, 0.996191859
+)
+
 local toggleAnims = {
     ["Artur Novas's idle"] = "rbxassetid://105747901312742",
     ["Adam Dice (died)"] = "rbxassetid://114023816208972",
@@ -1260,7 +1306,6 @@ local function playButtonAnim(id)
     track:Play()
 end
 
--- Unlock Third Person
 local function unlockThirdPerson()
     pcall(function()
         LocalPlayer.CameraMaxZoomDistance = 99999
@@ -1271,178 +1316,14 @@ local function unlockThirdPerson()
 end
 
 local function resetThirdPerson()
-    pcall(function() UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter end)
+    pcall(function()
+        LocalPlayer.CameraMaxZoomDistance = 50
+        LocalPlayer.CameraMode = Enum.CameraMode.LockFirstPerson
+        UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+        if Camera then Camera.CameraType = Enum.CameraType.Custom end
+    end)
 end
 
--- Aimlock helpers
-local function CreateFOVCircle()
-    if not Drawing then return nil end
-    local circle = Drawing.new("Circle")
-    circle.Thickness = 1.5
-    circle.NumSides = 360
-    circle.Radius = Config.FOVCircleSize
-    circle.Visible = false
-    circle.Color = Color3.fromRGB(255, 255, 255)
-    circle.Filled = false
-    return circle
-end
-
-local function GetBodyPartPosition(character, bodyPart)
-    if not character then return nil end
-    if bodyPart == "Head" then
-        local head = character:FindFirstChild("Head")
-        if head then return head.Position end
-    elseif bodyPart == "HRP" then
-        local hrp = character:FindFirstChild("HumanoidRootPart")
-        if hrp then return hrp.Position end
-    elseif bodyPart == "Torso" then
-        local torso = character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso") or character:FindFirstChild("HumanoidRootPart")
-        if torso then return torso.Position end
-    end
-    local hrp = character:FindFirstChild("HumanoidRootPart")
-    if hrp then return hrp.Position end
-    return nil
-end
-
-local function IsTargetVisible(targetPosition)
-    if not Config.WallCheck then return true end
-    local character = LocalPlayer.Character
-    if not character then return false end
-    local cameraPos = Camera.CFrame.Position
-    local direction = (targetPosition - cameraPos)
-    local distance = direction.Magnitude
-    direction = direction.Unit
-    local params = RaycastParams.new()
-    params.FilterType = Enum.RaycastFilterType.Blacklist
-    params.FilterDescendantsInstances = {character, LocalPlayer.Character, CurrentTarget}
-    local rayResult = workspace:Raycast(cameraPos, direction * distance, params)
-    if rayResult then
-        local hit = rayResult.Instance
-        if hit then
-            local hitChar = hit:FindFirstAncestorWhichIsA("Model")
-            if hitChar and (hitChar == CurrentTarget or Players:GetPlayerFromCharacter(hitChar) or table.find(CachedMobs, hitChar)) then
-                return true
-            end
-            local isSolidWall = false
-            if hit:IsA("BasePart") then
-                local isInvisible = hit.Transparency >= 0.95
-                local hasCollision = hit.CanCollide
-                local isTransparentMaterial = (hit.Material == Enum.Material.Neon or hit.Material == Enum.Material.Glass or hit.Material == Enum.Material.ForceField)
-                if hasCollision and not isInvisible and not isTransparentMaterial then isSolidWall = true end
-            end
-            if isSolidWall then
-                return false
-            else
-                local newStart = hit.Position + direction * 0.5
-                local newDistance = distance - (newStart - cameraPos).Magnitude
-                if newDistance > 0 then
-                    local secondRay = workspace:Raycast(newStart, direction * newDistance, params)
-                    if secondRay then
-                        local secondHit = secondRay.Instance
-                        local secondChar = secondHit and secondHit:FindFirstAncestorWhichIsA("Model")
-                        if secondChar and (secondChar == CurrentTarget or Players:GetPlayerFromCharacter(secondChar) or table.find(CachedMobs, secondChar)) then
-                            return true
-                        end
-                        if secondHit:IsA("BasePart") and secondHit.CanCollide and secondHit.Transparency < 0.95 then
-                            return false
-                        else
-                            return true
-                        end
-                    else
-                        return true
-                    end
-                else
-                    return true
-                end
-            end
-        end
-    end
-    return true
-end
-
-local function FindBestTarget()
-    local character = LocalPlayer.Character
-    if not character then return nil end
-    local viewportCenter = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
-    local bestTarget = nil
-    local bestScore = math.huge
-    for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer then
-            local targetChar = player.Character
-            if targetChar and targetChar:FindFirstChild("HumanoidRootPart") then
-                local humanoid = targetChar:FindFirstChildOfClass("Humanoid")
-                if humanoid and humanoid.Health > 0 then
-                    local targetPos = GetBodyPartPosition(targetChar, Config.BodyPartLock)
-                    if targetPos then
-                        local screenPos, onScreen = Camera:WorldToViewportPoint(targetPos)
-                        if onScreen then
-                            local distanceToCenter = (Vector2.new(screenPos.X, screenPos.Y) - viewportCenter).Magnitude
-                            if distanceToCenter <= Config.FOVCircleSize then
-                                if IsTargetVisible(targetPos) then
-                                    local score = distanceToCenter
-                                    if score < bestScore then
-                                        bestScore = score
-                                        bestTarget = targetChar
-                                    end
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-    for _, mob in pairs(CachedMobs) do
-        if mob and mob ~= character then
-            local humanoid = mob:FindFirstChildOfClass("Humanoid")
-            if humanoid and humanoid.Health > 0 then
-                local targetPos = GetBodyPartPosition(mob, Config.BodyPartLock)
-                if targetPos then
-                    local screenPos, onScreen = Camera:WorldToViewportPoint(targetPos)
-                    if onScreen then
-                        local distanceToCenter = (Vector2.new(screenPos.X, screenPos.Y) - viewportCenter).Magnitude
-                        if distanceToCenter <= Config.FOVCircleSize then
-                            if IsTargetVisible(targetPos) then
-                                local score = distanceToCenter
-                                if score < bestScore then
-                                    bestScore = score
-                                    bestTarget = mob
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-    return bestTarget, bestScore
-end
-
-local function ApplyAimlock()
-    if not Config.AimlockEnabled then
-        if CurrentTarget then CurrentTarget = nil end
-        return
-    end
-    local character = LocalPlayer.Character
-    if not character then return end
-    local target, score = FindBestTarget()
-    if target and score < Config.FOVCircleSize then
-        CurrentTarget = target
-        local targetPos = GetBodyPartPosition(target, Config.BodyPartLock)
-        if not targetPos then return end
-        local lockStrength = Config.LockPower / 100
-        local cameraPos = Camera.CFrame.Position
-        local directionToTarget = (targetPos - cameraPos).Unit
-        local currentDirection = Camera.CFrame.LookVector
-        local newDirection = currentDirection:Lerp(directionToTarget, math.min(lockStrength * 1.5, 1))
-        local newCFrame = CFrame.lookAt(cameraPos, cameraPos + newDirection)
-        Camera.CFrame = newCFrame
-    else
-        CurrentTarget = nil
-    end
-end
-
--- Weapon attack & cooldowns (toutes les fonctions)
 local function loadAnimation(character, weaponName)
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     if not humanoid then return end
@@ -1667,7 +1548,7 @@ UserInputService.InputEnded:Connect(function(input)
         if character then
             local humanoid = character:FindFirstChildOfClass("Humanoid")
             if humanoid then
-                if Config.SpeedHackEnabled then humanoid.WalkSpeed = Config.WalkSpeedValue else humanoid.WalkSpeed = 9 end
+                if Config.SpeedHackEnabled then humanoid.WalkSpeed = Config.WalkSpeedValue end
             end
         end
     end
@@ -1818,42 +1699,53 @@ RunService.Stepped:Connect(function()
 end)
 
 RunService.RenderStepped:Connect(function(dt)
+    local character = LocalPlayer.Character
+    if not character then return end
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid or humanoid.Health <= 0 then return end
+
+    if Config.SpeedHackEnabled then
+        humanoid.WalkSpeed = Config.WalkSpeedValue
+    end
+
     if Config.InfiniteStaminaEnabled then
-        local character = LocalPlayer.Character
-        if character then
-            local humanoid = character:FindFirstChildOfClass("Humanoid")
-            if humanoid and humanoid.Health > 0 then
-                local hrp = character:FindFirstChild("HumanoidRootPart")
-                local isMoving = hrp and hrp.Velocity.Magnitude > 2
-                if isShiftHeld and isMoving then
-                    humanoid.WalkSpeed = 18.5
-                elseif not isShiftHeld then
-                    if Config.SpeedHackEnabled then humanoid.WalkSpeed = Config.WalkSpeedValue else humanoid.WalkSpeed = 9 end
+        local hrp = character:FindFirstChild("HumanoidRootPart")
+        local isMoving = hrp and hrp.Velocity.Magnitude > 2
+        if isShiftHeld and isMoving then
+            humanoid.WalkSpeed = 18.5
+        elseif not isShiftHeld then
+            if Config.SpeedHackEnabled then
+                humanoid.WalkSpeed = Config.WalkSpeedValue
+            else
+                humanoid.WalkSpeed = 9
+            end
+        end
+        local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+        if playerGui then
+            local gui = playerGui:FindFirstChild("Gui")
+            if gui then
+                local heartbeat = gui:FindFirstChild("heartbeat")
+                if heartbeat then
+                    if heartbeat:IsA("Sound") then heartbeat:Stop() end
+                    heartbeat:Destroy()
                 end
-                local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-                if playerGui then
-                    local gui = playerGui:FindFirstChild("Gui")
-                    if gui then
-                        local heartbeat = gui:FindFirstChild("heartbeat")
-                        if heartbeat then
-                            if heartbeat:IsA("Sound") then heartbeat:Stop() end
-                            heartbeat:Destroy()
+                local heartbeat2 = gui:FindFirstChild("heartbeat2")
+                if heartbeat2 then
+                    if heartbeat2:IsA("Sound") then heartbeat2:Stop() end
+                    heartbeat2:Destroy()
+                end
+                local vignette = gui:FindFirstChild("vignette")
+                if vignette then vignette.Visible = false end
+                local statusFrame = gui:FindFirstChild("statusFrame")
+                if statusFrame then
+                    local stamina = statusFrame:FindFirstChild("stamina")
+                    if stamina then
+                        local bar = stamina:FindFirstChild("bar")
+                        if bar then
+                            bar.Size = UDim2.new(1, 0, 1, 0)
                         end
-                        local heartbeat2 = gui:FindFirstChild("heartbeat2")
-                        if heartbeat2 then
-                            if heartbeat2:IsA("Sound") then heartbeat2:Stop() end
-                            heartbeat2:Destroy()
-                        end
-                        local vignette = gui:FindFirstChild("vignette")
-                        if vignette then vignette.Visible = false end
-                        local statusFrame = gui:FindFirstChild("statusFrame")
-                        if statusFrame then
-                            local stamina = statusFrame:FindFirstChild("stamina")
-                            if stamina then
-                                local bar = stamina:FindFirstChild("bar")
-                                if bar then bar.Size = UDim2.new(1, 0, 1, 0) end
-                            end
-                        end
+                        local overlay = stamina:FindFirstChild("overlay")
+                        if overlay then overlay.Visible = false end
                     end
                 end
             end
@@ -1867,14 +1759,6 @@ RunService.Heartbeat:Connect(function(dt)
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     local hrp = character:FindFirstChild("HumanoidRootPart")
     if not hrp or not humanoid then return end
-
-    if not Config.InfiniteStaminaEnabled then
-        if Config.SpeedHackEnabled then
-            humanoid.WalkSpeed = Config.WalkSpeedValue
-        else
-            humanoid.WalkSpeed = 9
-        end
-    end
 
     if Config.JumpPowerEnabled and not Config.JumpBypassActive then
         humanoid.UseJumpPower = true
@@ -1906,185 +1790,96 @@ RunService.Heartbeat:Connect(function(dt)
 end)
 
 task.spawn(function()
-    while not Drawing do task.wait() end
-    FOVCircle = CreateFOVCircle()
     while true do
-        task.wait()
-        if FOVCircle then
-            if Config.AimlockEnabled and Config.FOVCircleSize > 0 then
-                FOVCircle.Visible = true
-                FOVCircle.Radius = Config.FOVCircleSize
-                FOVCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
-            else
-                FOVCircle.Visible = false
-            end
+        if Config.AntiAFKEnabled then
+            pcall(function()
+                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Unknown, false, game)
+                task.wait(1)
+                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Unknown, false, game)
+            end)
         end
+        task.wait(60)
     end
 end)
 
-RunService.RenderStepped:Connect(function()
-    pcall(updateCoordinatesHUD)
-    pcall(updateLiveDebugPanel)
+local animatorIdleTrack = nil
+local animatorWalkTrack = nil
+local animatorRunTrack = nil
+local animatorLastState = nil
 
-    if Config.UnlockThirdPerson then unlockThirdPerson() end
-    if Config.AimlockEnabled then ApplyAimlock() end
-
-    local myChar = LocalPlayer.Character
-    local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
-    if not myHrp then return end
-
-    for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer then
-            local char = player.Character
-            local phrp = char and char:FindFirstChild("HumanoidRootPart")
-            local phum = char and char:FindFirstChildOfClass("Humanoid")
-            if phrp and phum then
-                local distance = (myHrp.Position - phrp.Position).Magnitude
-                local isFriend = LocalPlayer:IsFriendsWith(player.UserId)
-                local hlToggle = isFriend and Config.HighlightFriends or Config.HighlightPlayer
-                local hpToggle = isFriend and Config.HealthFriends or Config.HealthPlayer
-                local trToggle = isFriend and Config.TracerFriends or Config.TracerPlayer
-                local color = isFriend and Config.ColorFriends or Config.ColorPlayer
-                if distance <= Config.MaxDistance then
-                    local hl = char:FindFirstChild("SentinelHL")
-                    if hlToggle then
-                        if not hl then
-                            hl = Instance.new("Highlight", char)
-                            hl.Name = "SentinelHL"
-                        end
-                        hl.FillColor = color
-                        hl.FillTransparency = Config.HLFillTrans
-                        hl.OutlineTransparency = Config.HLOutlineTrans
-                    elseif hl then hl:Destroy() end
-                    local bgui = phrp:FindFirstChild("SentinelHP")
-                    if hpToggle then
-                        if not bgui then
-                            bgui = Instance.new("BillboardGui", phrp)
-                            bgui.Name = "SentinelHP"
-                            bgui.Size = UDim2.new(0, 150, 0, 30)
-                            bgui.AlwaysOnTop = true
-                            bgui.StudsOffset = Vector3.new(0, 3, 0)
-                            local text = Instance.new("TextLabel", bgui)
-                            text.Size = UDim2.new(1, 0, 1, 0)
-                            text.BackgroundTransparency = 1
-                            text.TextStrokeTransparency = 0
-                            text.Font = Enum.Font.SourceSansBold
-                            text.TextSize = 13
-                        end
-                        if bgui and bgui.TextLabel then
-                            bgui.TextLabel.TextColor3 = color
-                            bgui.TextLabel.Text = string.format("%s [%d HP]", player.Name, math.round(phum.Health))
-                        end
-                    elseif bgui then bgui:Destroy() end
-                    local line = getTracer(player.UserId)
-                    if line then
-                        if trToggle then
-                            local vector, onScreen = Camera:WorldToViewportPoint(phrp.Position)
-                            if onScreen then
-                                line.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
-                                line.To = Vector2.new(vector.X, vector.Y)
-                                line.Color = color
-                                line.Visible = true
-                            else
-                                line.Visible = false
-                            end
-                        else
-                            line.Visible = false
-                        end
-                    end
-                else
-                    if char:FindFirstChild("SentinelHL") then char.SentinelHL:Destroy() end
-                    if phrp:FindFirstChild("SentinelHP") then phrp.SentinelHP:Destroy() end
-                    local line = tracerCache[player.UserId]
-                    if line then line.Visible = false end
-                end
+local function filterAnimNames(endPatterns)
+    local result = {}
+    for name, id in pairs(toggleAnims) do
+        local lower = name:lower()
+        for _, pattern in ipairs(endPatterns) do
+            if lower:sub(-#pattern) == pattern then
+                table.insert(result, name)
+                break
             end
         end
     end
+    return result
+end
 
-    for i = #CachedMobs, 1, -1 do
-        local obj = CachedMobs[i]
-        if obj and obj.Parent then
-            if obj == myChar or obj == LocalPlayer.Character or obj.Name == LocalPlayer.Name or Players:GetPlayerFromCharacter(obj) then
-                if obj:FindFirstChild("SentinelMobHL") then obj.SentinelMobHL:Destroy() end
-                local badHrp = obj:FindFirstChild("HumanoidRootPart")
-                if badHrp and badHrp:FindFirstChild("SentinelMobHP") then badHrp.SentinelMobHP:Destroy() end
-                local badId = obj:GetDebugId()
-                if tracerCache[badId] then tracerCache[badId].Visible = false end
-                table.remove(CachedMobs, i)
-                continue
-            end
-            local mhrp = obj:FindFirstChild("HumanoidRootPart")
-            local mhum = obj:FindFirstChildOfClass("Humanoid")
-            if mhrp and mhum then
-                local distance = (myHrp.Position - mhrp.Position).Magnitude
-                local mobId = obj:GetDebugId()
-                if distance <= Config.MaxDistance and mhum.Health > 0 then
-                    local hl = obj:FindFirstChild("SentinelMobHL")
-                    if Config.HighlightMobs then
-                        if not hl then
-                            hl = Instance.new("Highlight", obj)
-                            hl.Name = "SentinelMobHL"
-                        end
-                        hl.FillColor = Config.ColorMobs
-                        hl.FillTransparency = Config.HLFillTrans
-                        hl.OutlineTransparency = Config.HLOutlineTrans
-                    elseif hl then hl:Destroy() end
-                    local bgui = mhrp:FindFirstChild("SentinelMobHP")
-                    if Config.HealthMobs then
-                        if not bgui then
-                            bgui = Instance.new("BillboardGui", mhrp)
-                            bgui.Name = "SentinelMobHP"
-                            bgui.Size = UDim2.new(0, 150, 0, 30)
-                            bgui.AlwaysOnTop = true
-                            bgui.StudsOffset = Vector3.new(0, 3, 0)
-                            local text = Instance.new("TextLabel", bgui)
-                            text.Size = UDim2.new(1, 0, 1, 0)
-                            text.BackgroundTransparency = 1
-                            text.TextStrokeTransparency = 0
-                            text.Font = Enum.Font.SourceSansBold
-                            text.TextSize = 13
-                        end
-                        if bgui and bgui.TextLabel then
-                            bgui.TextLabel.TextColor3 = Config.ColorMobs
-                            bgui.TextLabel.Text = string.format("%s [%d HP]", obj.Name, math.round(mhum.Health))
-                        end
-                    elseif bgui then bgui:Destroy() end
-                    local line = getTracer(mobId)
-                    if line then
-                        if Config.TracerMobs then
-                            local vector, onScreen = Camera:WorldToViewportPoint(mhrp.Position)
-                            if onScreen then
-                                line.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
-                                line.To = Vector2.new(vector.X, vector.Y)
-                                line.Color = Config.ColorMobs
-                                line.Visible = true
-                            else
-                                line.Visible = false
-                            end
-                        else
-                            line.Visible = false
-                        end
-                    end
-                else
-                    if obj:FindFirstChild("SentinelMobHL") then obj.SentinelMobHL:Destroy() end
-                    if mhrp and mhrp:FindFirstChild("SentinelMobHP") then mhrp.SentinelMobHP:Destroy() end
-                    local line = tracerCache[mobId]
-                    if line then line.Visible = false end
-                end
-            end
-        else
-            table.remove(CachedMobs, i)
+local idleAnimNames = filterAnimNames({"idle", "idle (old)"})
+local walkAnimNames = filterAnimNames({"walk", "walk (old)"})
+local runAnimNames = filterAnimNames({"run", "run (old)"})
+
+local function stopAllAnimatorTracks()
+    if animatorIdleTrack then animatorIdleTrack:Stop(); animatorIdleTrack = nil end
+    if animatorWalkTrack then animatorWalkTrack:Stop(); animatorWalkTrack = nil end
+    if animatorRunTrack then animatorRunTrack:Stop(); animatorRunTrack = nil end
+end
+
+local function applyAnimatorState()
+    if Config.FakeDeath then
+        stopAllAnimatorTracks()
+        return
+    end
+
+    if not Config.AnimatorEnabled then
+        stopAllAnimatorTracks()
+        return
+    end
+
+    local char = LocalPlayer.Character
+    if not char then return end
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not humanoid or humanoid.Health <= 0 then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    local velocity = hrp.Velocity
+    local horizontalVel = Vector3.new(velocity.X, 0, velocity.Z)
+    local speed = horizontalVel.Magnitude
+
+    local newState
+    if isShiftHeld and speed > 2 then
+        newState = "run"
+    elseif speed > 0.5 then
+        newState = "walk"
+    else
+        newState = "idle"
+    end
+
+    if newState ~= animatorLastState then
+        animatorLastState = newState
+        stopAllAnimatorTracks()
+        if newState == "idle" and Config.AnimatorIdleAnimId then
+            animatorIdleTrack = playAnimationOnHumanoid(Config.AnimatorIdleAnimId, true)
+        elseif newState == "walk" and Config.AnimatorWalkAnimId then
+            animatorWalkTrack = playAnimationOnHumanoid(Config.AnimatorWalkAnimId, true)
+        elseif newState == "run" and Config.AnimatorRunAnimId then
+            animatorRunTrack = playAnimationOnHumanoid(Config.AnimatorRunAnimId, true)
         end
     end
-end)
+end
 
--- ===================== INTERFACE FLUENT =====================
 local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
 
 local Window = Fluent:CreateWindow({
     Title = "Sentinel - Examination",
-    SubTitle = " | version : 4.00.00",
+    SubTitle = " | version : 7.00.10",
     TabWidth = 160,
     Size = UDim2.fromOffset(520, 420),
     Acrylic = true,
@@ -2105,9 +1900,9 @@ local Tabs = {
     Fun = Window:AddTab({ Title = "Fun", Icon = "smile" }),
     Game = Window:AddTab({ Title = "Game", Icon = "trophy" }),
     About = Window:AddTab({ Title = "About", Icon = "info" }),
+    Settings = Window:AddTab({ Title = "Settings", Icon = "settings" }),
 }
 
--- ===================== PLAYER TAB =====================
 local WalkspeedSection = Tabs.Player:AddSection("Walkspeed Settings")
 WalkspeedSection:AddToggle("WSToggle", { Title = "Enable Speed Modifiers", Default = false }):OnChanged(function(v) Config.SpeedHackEnabled = v end)
 WalkspeedSection:AddSlider("WSSlider", { Title = "WalkSpeed", Min = 1, Max = 150, Default = 16, Rounding = 0 }):OnChanged(function(v) Config.WalkSpeedValue = v end)
@@ -2127,7 +1922,7 @@ end)
 
 local JumpSection = Tabs.Player:AddSection("Jump Settings")
 JumpSection:AddToggle("JPToggle", { Title = "Enable JumpPower", Default = false }):OnChanged(function(v) Config.JumpPowerEnabled = v end)
-JumpSection:AddSlider("JPSlider", { Title = "JumpPower ", Min = 5, Max = 75, Default = 50, Rounding = 0 }):OnChanged(function(v) Config.JumpPowerValue = v end)
+JumpSection:AddSlider("JPSlider", { Title = "JumpPower", Min = 5, Max = 75, Default = 30, Rounding = 0 }):OnChanged(function(v) Config.JumpPowerValue = v end)
 JumpSection:AddToggle("InfJump", { Title = "Infinite Jump", Default = false }):OnChanged(function(v) Config.InfiniteJump = v end)
 JumpSection:AddButton({ Title = "Bypass Jump AC", Callback = function() Config.JumpBypassActive = not Config.JumpBypassActive end })
 
@@ -2172,6 +1967,92 @@ PhysicSection:AddToggle("StaggerToggle", {
     end
 })
 
+local LandminesSection = Tabs.Player:AddSection("Landmines")
+LandminesSection:AddToggle("IgnoreLandmineToggle", {
+    Title = "Ignore Landmines [BETA]",
+    Default = false,
+    Callback = function(v)
+        Config.IgnoreLandmine = v
+        if v then
+            if landmineHitEvent then
+                originalLandmineFire = landmineHitEvent.FireServer
+                landmineHitEvent.FireServer = function() end
+                pcall(function()
+                    local mt = getrawmetatable(landmineHitEvent)
+                    local oldNamecall = mt.__namecall
+                    if oldNamecall then
+                        mt.__namecall = function(self, ...)
+                            if self == landmineHitEvent then return end
+                            return oldNamecall(self, ...)
+                        end
+                    end
+                end)
+            end
+            for _, obj in ipairs(workspace:GetDescendants()) do
+                if obj.Name == "Landmine" then
+                    local mine = obj:FindFirstChild("Mine")
+                    if mine and mine:IsA("BasePart") then
+                        mine.CanTouch = false
+                    end
+                end
+            end
+            if not IgnoreLandmineConnection then
+                IgnoreLandmineConnection = workspace.DescendantAdded:Connect(function(desc)
+                    if Config.IgnoreLandmine and desc.Name == "Landmine" then
+                        task.wait(0.1)
+                        local mine = desc:FindFirstChild("Mine")
+                        if mine and mine:IsA("BasePart") then
+                            mine.CanTouch = false
+                        end
+                    end
+                end)
+            end
+        else
+            if originalLandmineFire and landmineHitEvent then
+                landmineHitEvent.FireServer = originalLandmineFire
+                originalLandmineFire = nil
+            end
+            if IgnoreLandmineConnection then
+                IgnoreLandmineConnection:Disconnect()
+                IgnoreLandmineConnection = nil
+            end
+        end
+    end
+})
+LandminesSection:AddButton({ Title = "Delete All Landmines", Callback = deleteAllLandmines })
+
+local GodmodSection = Tabs.Player:AddSection("God mod [BETA]")
+GodmodSection:AddToggle("GodmodeToggle", { Title = "Godmode", Default = false }):OnChanged(function(v)
+    Config.GodmodeEnabled = v
+    if v then
+        GodmodePreviousPosition = nil
+        GodmodeTeleported = false
+    end
+end)
+GodmodSection:AddSlider("GodmodeHealthSlider", { Title = "Health Threshold", Min = 1, Max = 50, Default = 10, Rounding = 0 }):OnChanged(function(v)
+    Config.GodmodeHealthThreshold = v
+end)
+GodmodSection:AddButton({ Title = "Teleport to Baseplate", Callback = function()
+    local char = LocalPlayer.Character
+    if char and char:FindFirstChild("HumanoidRootPart") then
+        GodmodePreviousPosition = char.HumanoidRootPart.CFrame
+        char:PivotTo(CFrame.new(0, 5, 0))
+        GodmodeTeleported = true
+    end
+end })
+GodmodSection:AddButton({ Title = "Return to Previous Position", Callback = function()
+    if GodmodePreviousPosition then
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChild("HumanoidRootPart") then
+            char:PivotTo(GodmodePreviousPosition)
+            GodmodeTeleported = false
+            GodmodePreviousPosition = nil
+        end
+    else
+        Fluent:Notify({ Title = "Error", Content = "No previous position stored", Duration = 2 })
+    end
+end })
+
 local HealthSection = Tabs.Player:AddSection("Character Health")
 HealthSection:AddButton({ Title = "Suicide", Callback = function() local character = LocalPlayer.Character; local humanoid = character and character:FindFirstChildOfClass("Humanoid"); if humanoid then humanoid.Health = 0 end end })
 HealthSection:AddButton({ Title = "Suicide with Animation", Callback = suicideWithAnimation })
@@ -2185,22 +2066,51 @@ HealthSection:AddToggle("FakeInjuredToggle", { Title = "Fake Injured (idle)", De
 end)
 
 local InfectionSection = Tabs.Player:AddSection("Fake Infection")
-InfectionSection:AddDropdown("InfectionModeDropdown", {
-    Title = "Mode",
-    Values = {"Non Controllable", "Controllable"},
-    Default = "Non Controllable",
-    Callback = function(value)
-        Config.InfectionMode = value
-    end
-})
 InfectionSection:AddButton({
-    Title = "Activate Infection",
+    Title = "Fake Controllable Infected",
     Callback = function()
         if InfectionActive then
             Fluent:Notify({ Title = "Infection", Content = "Already active!", Duration = 2 })
             return
         end
         startInfectionSequence()
+    end
+})
+
+local AnimatorSection = Tabs.Player:AddSection("Animator")
+AnimatorSection:AddToggle("AnimatorApplyToggle", {
+    Title = "Apply Animator Config",
+    Default = false,
+    Callback = function(v)
+        Config.AnimatorEnabled = v
+        if not v then
+            stopAllAnimatorTracks()
+            animatorLastState = nil
+        end
+    end
+})
+AnimatorSection:AddDropdown("IdleAnimDropdown", {
+    Title = "Idle Animation",
+    Values = idleAnimNames,
+    Default = nil,
+    Callback = function(value)
+        Config.AnimatorIdleAnimId = toggleAnims[value]
+    end
+})
+AnimatorSection:AddDropdown("WalkAnimDropdown", {
+    Title = "Walk Animation",
+    Values = walkAnimNames,
+    Default = nil,
+    Callback = function(value)
+        Config.AnimatorWalkAnimId = toggleAnims[value]
+    end
+})
+AnimatorSection:AddDropdown("RunAnimDropdown", {
+    Title = "Run Animation (Shift)",
+    Values = runAnimNames,
+    Default = nil,
+    Callback = function(value)
+        Config.AnimatorRunAnimId = toggleAnims[value]
     end
 })
 
@@ -2241,7 +2151,6 @@ CustomizationSection:AddDropdown("TeamDropdown", {
     end
 })
 
--- ===================== COMBAT TAB =====================
 local WeaponActionsSection = Tabs.Combat:AddSection("Fists Settings")
 WeaponActionsSection:AddToggle("GAttackToggle", { Title = "Enable G-Key Attack", Default = true }):OnChanged(function(v) Config.GAttackEnabled = v end)
 WeaponActionsSection:AddToggle("BypassCDToggle", { Title = "Bypass Client Cooldowns", Default = false }):OnChanged(function(v) Config.BypassCombatCooldowns = v end)
@@ -2249,11 +2158,11 @@ WeaponActionsSection:AddToggle("AutoSpamToggle", { Title = "Auto-Spam Attack", D
 
 local GunModsSection = Tabs.Combat:AddSection("Gun Mod")
 GunModsSection:AddToggle("AntiRecoilToggle", { Title = "No Recoil [ALPHA]", Default = false }):OnChanged(function(v) Config.AntiCamShake = v end)
-GunModsSection:AddToggle("ExpandHitbox", { Title = "Expand Hitbox (NPC Heads)", Default = false }):OnChanged(function(v)
+GunModsSection:AddToggle("ExpandHitbox", { Title = "Hitbox Expander", Default = false }):OnChanged(function(v)
     HitboxEnabled = v
     UpdateAllHitboxes(HitboxEnabled)
 end)
-GunModsSection:AddToggle("SilencerToggle", { Title = "Silencer (client only)", Default = false }):OnChanged(function(v)
+GunModsSection:AddToggle("SilencerToggle", { Title = "Silencer", Default = false }):OnChanged(function(v)
     Config.SilencerEnabled = v
     updateSilencers(v)
 end)
@@ -2264,18 +2173,6 @@ ShieldRemoverSection:AddButton({ Title = "Delete All Shields", Callback = functi
         if obj.Name == "Shield" then obj:Destroy() end
     end
 end })
-ShieldRemoverSection:AddToggle("ShootThroughShield", { Title = "Shoot Through Shield", Default = false }):OnChanged(function(v)
-    ShootThroughShieldActive = v
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj.Name == "Shield" then
-            for _, part in ipairs(obj:GetDescendants()) do
-                if part:IsA("BasePart") then
-                    part.CanCollide = not v
-                end
-            end
-        end
-    end
-end)
 ShieldRemoverSection:AddToggle("AutoShieldRemoval", { Title = "Auto-Remove Shields", Default = false }):OnChanged(function(v)
     AutoShieldRemovalActive = v
     if v then
@@ -2301,17 +2198,9 @@ ShieldRemoverSection:AddToggle("AutoShieldRemoval", { Title = "Auto-Remove Shiel
     end
 end)
 
-local AimlockSection = Tabs.Combat:AddSection("Aimlock Settings [BETA]")
-AimlockSection:AddToggle("AimlockEnabled", { Title = "Aimlock Entities", Default = false }):OnChanged(function(v) Config.AimlockEnabled = v end)
-AimlockSection:AddToggle("WallCheck", { Title = "Wall Check", Default = true }):OnChanged(function(v) Config.WallCheck = v end)
-AimlockSection:AddSlider("FOVCircleSize", { Title = "FOV Circle Size", Min = 50, Max = 500, Default = 150, Rounding = 0 }):OnChanged(function(v) Config.FOVCircleSize = v end)
-AimlockSection:AddSlider("LockPower", { Title = "Lock Power %", Min = 0, Max = 100, Default = 50, Rounding = 0 }):OnChanged(function(v) Config.LockPower = v end)
-AimlockSection:AddDropdown("BodyPartLock", { Title = "BodyPart Lock (R6)", Values = {"Head", "HRP", "Torso"}, Default = "Head" }):OnChanged(function(v) Config.BodyPartLock = v end)
-
 local HazardsSection = Tabs.Combat:AddSection("Radiations")
 HazardsSection:AddToggle("HazardImmToggle", { Title = "Anti-Radiation Effect [NOT A GODMOD]", Default = false }):OnChanged(function(v) Config.ImmuneLookHazard = v end)
 
--- ===================== WORLD TAB =====================
 local TeleportSection = Tabs.World:AddSection("Teleport")
 for sectorName, points in pairs(teleportPoints) do
     local optionNames = {}
@@ -2524,8 +2413,10 @@ end)
 
 local MapRemoverSection = Tabs.World:AddSection("Map Remover")
 MapRemoverSection:AddButton({ Title = "Remove Elephant Foot (LookAtMe)", Callback = removeElephantFoot })
+MapRemoverSection:AddButton({ Title = "Remove Arabic dud", Callback = removeArabicDud })
+MapRemoverSection:AddButton({ Title = "Remove Lobby Music", Callback = removeLobbyMusic })
+MapRemoverSection:AddButton({ Title = "Delete ALL doors", Callback = deleteAllDoors })
 
--- ===================== FUN TAB (Animations) =====================
 local ToggleAnimSection = Tabs.Fun:AddSection("Idle Animations (Toggles)")
 for name, id in pairs(toggleAnims) do
     ToggleAnimSection:AddToggle(name, {
@@ -2547,7 +2438,6 @@ for name, id in pairs(buttonAnims) do
     })
 end
 
--- ===================== ESP TAB =====================
 local GlobalESPSection = Tabs.ESP:AddSection("ESP Settings")
 GlobalESPSection:AddSlider("MaxDist", { Title = "Max ESP Distance", Min = 0, Max = 1000, Default = 250, Rounding = 0 }):OnChanged(function(v) Config.MaxDistance = v end)
 GlobalESPSection:AddSlider("FillTrans", { Title = "Highlight Fill Transparency", Min = 0, Max = 1, Default = 0.7, Rounding = 1 }):OnChanged(function(v) Config.HLFillTrans = v end)
@@ -2571,9 +2461,48 @@ MobESPSection:AddToggle("HMobs", { Title = "ESP Health EntitiesMobs", Default = 
 MobESPSection:AddToggle("TMobs", { Title = "Tracer Entities", Default = false }):OnChanged(function(v) Config.TracerMobs = v end)
 MobESPSection:AddColorpicker("CPMobs", { Title = "Entities ESP Color", Default = Config.ColorMobs }):OnChanged(function(v) Config.ColorMobs = v end)
 
--- ===================== GAME TAB =====================
-local GameSection = Tabs.Game:AddSection(".exe")
-GameSection:AddButton({
+local OtherESPSection = Tabs.ESP:AddSection("Other ESP")
+OtherESPSection:AddToggle("HighlightLandmines", { Title = "Highlight Landmines", Default = false }):OnChanged(function(v)
+    Config.HighlightLandmines = v
+    if not v then
+        for _, hl in pairs(LandmineHighlights) do
+            if hl and hl.Parent then hl:Destroy() end
+        end
+        table.clear(LandmineHighlights)
+    end
+end)
+OtherESPSection:AddColorpicker("ColorLandmines", {
+    Title = "Landmines Color",
+    Default = Config.ColorLandmines,
+    Callback = function(v)
+        Config.ColorLandmines = v
+        for _, hl in pairs(LandmineHighlights) do
+            if hl then hl.FillColor = v end
+        end
+    end
+})
+OtherESPSection:AddToggle("HighlightGenerators", { Title = "Highlight Generators", Default = false }):OnChanged(function(v)
+    Config.HighlightGenerators = v
+    if not v then
+        for _, hl in pairs(GeneratorHighlights) do
+            if hl and hl.Parent then hl:Destroy() end
+        end
+        table.clear(GeneratorHighlights)
+    end
+end)
+OtherESPSection:AddColorpicker("ColorGenerators", {
+    Title = "Generators Color",
+    Default = Config.ColorGenerators,
+    Callback = function(v)
+        Config.ColorGenerators = v
+        for _, hl in pairs(GeneratorHighlights) do
+            if hl then hl.FillColor = v end
+        end
+    end
+})
+
+local TeleportationsSection = Tabs.Game:AddSection("Teleportations")
+TeleportationsSection:AddButton({
     Title = "UNDEREQUIPPED [MUST BE IN A SECTOR]",
     Callback = function()
         local o = workspace:FindFirstChild("Classless_Badge")
@@ -2585,7 +2514,14 @@ GameSection:AddButton({
         end
     end
 })
+TeleportationsSection:AddButton({
+    Title = "Go to Restricted Server",
+    Callback = function()
+        teleportToCFrame(RestrictedServerCFrame)
+    end
+})
 
+local CoreGUISection = Tabs.Game:AddSection("CoreGUI")
 local ChatLoggerEnabled = false
 local function ToggleNativeChat(enable)
     if enable then
@@ -2605,8 +2541,7 @@ local function ToggleNativeChat(enable)
         end
     end
 end
-
-GameSection:AddToggle("ChatLoggerToggle", { Title = "Show Native Chat (CoreGui)", Default = false }):OnChanged(function(v)
+CoreGUISection:AddToggle("ChatLoggerToggle", { Title = "Show Native Chat (CoreGui)", Default = false }):OnChanged(function(v)
     ChatLoggerEnabled = v
     ToggleNativeChat(v)
     if v then
@@ -2616,11 +2551,23 @@ GameSection:AddToggle("ChatLoggerToggle", { Title = "Show Native Chat (CoreGui)"
     end
 end)
 
-local DevPanelsSection = Tabs.Game:AddSection("Developer Debug Panels")
-DevPanelsSection:AddToggle("DebugPanelTgl", { Title = "Live Debug Stats Panel", Default = false }):OnChanged(function(v) Config.ShowDebugPanel = v end)
-DevPanelsSection:AddToggle("ShowCoords", { Title = "Show Coordinates", Default = false }):OnChanged(function(v) Config.ShowCoordinates = v end)
+local UtilitiesSection = Tabs.Game:AddSection("Utilities")
+UtilitiesSection:AddToggle("AntiAFKToggle", { Title = "Anti-AFK", Default = false }):OnChanged(function(v)
+    Config.AntiAFKEnabled = v
+end)
+UtilitiesSection:AddButton({ Title = "Remove Death Screen", Callback = function()
+    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+    if playerGui then
+        local death = playerGui:FindFirstChild("Death")
+        if death then
+            death:Destroy()
+            Fluent:Notify({ Title = "Death Screen", Content = "Removed", Duration = 2 })
+        else
+            Fluent:Notify({ Title = "Death Screen", Content = "Not found", Duration = 2 })
+        end
+    end
+end })
 
--- ===================== ABOUT TAB =====================
 local AboutSection = Tabs.About:AddSection("Credits & Links")
 AboutSection:AddButton({ Title = "Copy Discord Server Link", Callback = function()
     local link = "https://discord.gg/xTP4qNx2"
@@ -2634,141 +2581,277 @@ AboutSection:AddButton({ Title = "Copy Rscripts.net Link", Callback = function()
     else pcall(function() local tb = Instance.new("TextBox"); tb.Text = link; tb:CaptureFocus(); tb:ReleaseFocus(); tb:Destroy() end) end
     Fluent:Notify({ Title = "Rscripts.net", Content = "Rscript Link copied", Duration = 3 })
 end })
-AboutSection:AddParagraph({ Title = "Crédits", Content = "Main Developer : @x4tmq\nScript : Sentinel v0.27.42\n\nThanks for using my script!" })
+AboutSection:AddParagraph({ Title = "Credits", Content = "-------------\nv.07.00.10\n-------------\nMain dev : x4tmq\nUnderequipped badge : expresso5184\nTesters : Sinitzyn - Χρήστος - 𝔽𝕝𝕒𝕣𝕖\n-------------\nStatus : Safe - Stable" })
 
--- ===================== COORDINATES & DEBUG PANEL =====================
-local function updateCoordinatesHUD()
-    if Config.ShowCoordinates then
-        if not testerCFGui or not testerCFGui.Parent then
-            local pGui = LocalPlayer:FindFirstChild("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui")
-            testerCFGui = Instance.new("ScreenGui", pGui)
-            testerCFGui.Name = "TesterCFGui"
-            testerCFGui.IgnoreGuiInset = true
-            testerCFGui.ResetOnSpawn = false
-            testerCFLabel = Instance.new("TextLabel", testerCFGui)
-            testerCFLabel.BackgroundTransparency = 1
-            testerCFLabel.Font = Enum.Font.Code
-            testerCFLabel.TextSize = 18
-            testerCFLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-            testerCFLabel.AnchorPoint = Vector2.new(0.5, 0)
-            testerCFLabel.Position = UDim2.new(0.5, 0, 0.12, 0)
-            testerCFLabel.Size = UDim2.new(0, 400, 0, 20)
-        end
-        local char = LocalPlayer.Character
-        local hrp = char and char:FindFirstChild("HumanoidRootPart")
-        if hrp then testerCFLabel.Text = string.format("cf: X %.2f  Y %.2f  Z %.2f", hrp.Position.X, hrp.Position.Y, hrp.Position.Z)
-        else testerCFLabel.Text = "CPosition: n/a" end
-    else
-        if testerCFGui then testerCFGui:Destroy(); testerCFGui = nil; testerCFLabel = nil end
+-- Settings Tab with Theme only
+local SettingsSection = Tabs.Settings:AddSection("Theme")
+local ThemeDropdown = SettingsSection:AddDropdown("Theme", {
+    Title = "Choose a theme",
+    Values = {"Light", "Dark", "Darker", "Rose", "Aqua", "Amethyst"},
+    Multi = false,
+    Default = "Light",
+})
+ThemeDropdown:OnChanged(function(Value)
+    Fluent:SetTheme(Value)
+end)
+
+RunService.Heartbeat:Connect(function(dt)
+    applyAnimatorState()
+end)
+
+-- Reset InfectionActive on respawn
+LocalPlayer.CharacterAdded:Connect(function()
+    if InfectionActive then
+        stopInfection()
     end
-end
+    InfectionActive = false
+    infectionIsRunning = false
+end)
 
-local function createRow(parent, name, text, isTitle)
-    local label = Instance.new("TextLabel", parent)
-    label.Name = name
-    label.BackgroundTransparency = 1
-    label.Size = UDim2.new(1, -8, 0, isTitle and 20 or 18)
-    label.Font = Enum.Font.Code
-    label.TextSize = isTitle and 15 or 13
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    label.TextColor3 = isTitle and Color3.fromRGB(255, 230, 160) or Color3.fromRGB(230, 230, 230)
-    label.Text = text
-    if not isTitle then debugLabelsCache[name] = label end
-end
-
-local function setBoolRow(label, title, val)
-    if not label then return end
-    label.TextColor3 = val and Color3.fromRGB(120, 255, 120) or Color3.fromRGB(255, 120, 120)
-    label.Text = string.format("%s: %s", title, val and "on" or "off")
-end
-
-local function getGunUIAndTool()
-    local char = LocalPlayer.Character
-    local tool = char and char:FindFirstChildWhichIsA("Tool")
-    if not tool or not tool:GetAttribute("IsGun") then return nil, nil end
-    local pGui = LocalPlayer:FindFirstChild("PlayerGui")
-    return pGui and pGui:FindFirstChild(tool.Name), tool
-end
-
-local function updateLiveDebugPanel()
-    if Config.ShowDebugPanel then
-        if not testerDebugGui or not testerDebugGui.Parent then
-            local pGui = LocalPlayer:FindFirstChild("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui")
-            testerDebugGui = Instance.new("ScreenGui", pGui)
-            testerDebugGui.Name = "TesterDebugGui"
-            testerDebugPanel = Instance.new("Frame", testerDebugGui)
-            testerDebugPanel.Name = "Panel"
-            testerDebugPanel.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
-            testerDebugPanel.Position = UDim2.new(0, 20, 0.2, 0)
-            testerDebugPanel.Size = UDim2.new(0, 260, 0, 340)
-            Instance.new("UICorner", testerDebugPanel).CornerRadius = UDim.new(0, 6)
-            local stroke = Instance.new("UIStroke", testerDebugPanel)
-            stroke.Color = Color3.fromRGB(90, 90, 90)
-            stroke.Thickness = 1
-            local list = Instance.new("UIListLayout", testerDebugPanel)
-            list.Padding = UDim.new(0, 2)
-            list.SortOrder = Enum.SortOrder.LayoutOrder
-            createRow(testerDebugPanel, "title", " [Sentinel Debug System]", true)
-            createRow(testerDebugPanel, "game_updated", " last update: " .. GameLastUpdateString, false)
-            createRow(testerDebugPanel, "header_player", " -- PLAYER ENGINE --", true)
-            createRow(testerDebugPanel, "p_health", " health: n/a", false)
-            createRow(testerDebugPanel, "p_pos", " pos: n/a", false)
-            createRow(testerDebugPanel, "p_moveSpeed", " movespeed: n/a", false)
-            createRow(testerDebugPanel, "p_velocity", " vel mag: n/a", false)
-            createRow(testerDebugPanel, "p_isGrounded", " grounded: n/a", false)
-            createRow(testerDebugPanel, "header_gun", " -- GUN ENGINE --", true)
-            createRow(testerDebugPanel, "g_name", " gun: none", false)
-            createRow(testerDebugPanel, "g_mode", " mode: n/a", false)
-            createRow(testerDebugPanel, "g_ammo", " ammo: n/a", false)
-            createRow(testerDebugPanel, "g_state", " state: n/a", false)
-        end
-        local char = LocalPlayer.Character
-        local humanoid = char and char:FindFirstChildOfClass("Humanoid")
-        local hrp = char and char:FindFirstChild("HumanoidRootPart")
-        if humanoid and hrp then
-            debugLabelsCache.p_health.Text = string.format(" health: %d / %d", math.floor(humanoid.Health), math.floor(humanoid.MaxHealth))
-            debugLabelsCache.p_pos.Text = string.format(" pos: %.1f, %.1f, %.1f", hrp.Position.X, hrp.Position.Y, hrp.Position.Z)
-            debugLabelsCache.p_moveSpeed.Text = string.format(" movespeed: %.1f", Vector3.new(hrp.Velocity.X, 0, hrp.Velocity.Z).Magnitude)
-            debugLabelsCache.p_velocity.Text = string.format(" vel mag: %.1f", hrp.Velocity.Magnitude)
-            setBoolRow(debugLabelsCache.p_isGrounded, " grounded", humanoid.FloorMaterial ~= Enum.Material.Air)
-        end
-        local gunGui, gunTool = getGunUIAndTool()
-        if gunTool then
-            debugLabelsCache.g_name.Text = " gun: " .. gunTool.Name
-            local gMode, gClip, gAmmo = "n/a", "n/a", "n/a"
-            if gunGui and gunGui:FindFirstChild("Data") then
-                local data = gunGui.Data
-                if data:FindFirstChild("mode") then gMode = data.mode.Text end
-                if data:FindFirstChild("clip") then gClip = data.clip.Text end
-                if data:FindFirstChild("ammo") then gAmmo = data.ammo.Text end
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        if Config.GodmodeEnabled then
+            local char = LocalPlayer.Character
+            if char then
+                local humanoid = char:FindFirstChildOfClass("Humanoid")
+                if humanoid and humanoid.Health <= Config.GodmodeHealthThreshold then
+                    if not GodmodeTeleported then
+                        local hrp = char:FindFirstChild("HumanoidRootPart")
+                        if hrp then
+                            GodmodePreviousPosition = hrp.CFrame
+                            char:PivotTo(CFrame.new(0, 5, 0))
+                            GodmodeTeleported = true
+                            Fluent:Notify({ Title = "Godmode", Content = "Teleported to baseplate (health low)", Duration = 2 })
+                        end
+                    end
+                end
             end
-            debugLabelsCache.g_mode.Text = " mode: " .. gMode
-            debugLabelsCache.g_ammo.Text = " ammo: clip " .. gClip .. " | res " .. gAmmo
-            local states = {}
-            if gClip == "--" or gunTool:GetAttribute("Reloading") == true then table.insert(states, "reloading") end
-            if Camera and Camera.FieldOfView < 70 then table.insert(states, "aiming") end
-            if gunTool:GetAttribute("Silencer") then table.insert(states, "silenced") end
-            debugLabelsCache.g_state.Text = " state: " .. (#states == 0 and "idle" or table.concat(states, ", "))
-        else
-            debugLabelsCache.g_name.Text = " gun: none"
-            debugLabelsCache.g_mode.Text = " mode: n/a"
-            debugLabelsCache.g_ammo.Text = " ammo: n/a"
-            debugLabelsCache.g_state.Text = " state: unequipped"
         end
-    else
-        if testerDebugGui then testerDebugGui:Destroy(); testerDebugGui = nil; testerDebugPanel = nil; table.clear(debugLabelsCache) end
-    end
-end
-
-UserInputService.InputBegan:Connect(function(input, processed)
-    if processed then return end
-    if input.KeyCode == Enum.KeyCode.Equals then
-        Config.ShowDebugPanel = not Config.ShowDebugPanel
-        local toggleOpt = Fluent.Options.DebugPanelTgl
-        if toggleOpt then toggleOpt:SetValue(Config.ShowDebugPanel) end
     end
 end)
 
--- ===================== FIN =====================
+-- Optimized landmine ESP (scan every 1.5 seconds, use a cache)
+task.spawn(function()
+    while true do
+        task.wait(1.5)
+        if Config.HighlightLandmines then
+            -- Check existing highlights and remove if object gone
+            for obj, hl in pairs(LandmineHighlights) do
+                if not obj.Parent then
+                    hl:Destroy()
+                    LandmineHighlights[obj] = nil
+                end
+            end
+            -- Add new landmines
+            for _, obj in ipairs(workspace:GetDescendants()) do
+                if obj:IsA("Model") and obj.Name == "Landmine" and not LandmineHighlights[obj] then
+                    local hl = Instance.new("Highlight")
+                    hl.Name = "SentinelLandmineHL"
+                    hl.FillColor = Config.ColorLandmines
+                    hl.FillTransparency = 0.5
+                    hl.OutlineTransparency = 0.5
+                    hl.Parent = obj
+                    LandmineHighlights[obj] = hl
+                end
+            end
+        else
+            for obj, hl in pairs(LandmineHighlights) do
+                hl:Destroy()
+                LandmineHighlights[obj] = nil
+            end
+        end
+    end
+end)
+
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        if Config.HighlightGenerators then
+            local gameDoors = workspace:FindFirstChild("GameDoors")
+            if gameDoors then
+                for _, gen in ipairs(gameDoors:GetChildren()) do
+                    if gen.Name:match("Generator%d") then
+                        local generator = gen:FindFirstChild("Generator")
+                        if generator and generator:IsA("Model") and not GeneratorHighlights[generator] then
+                            local hl = Instance.new("Highlight")
+                            hl.Name = "SentinelGeneratorHL"
+                            hl.FillColor = Config.ColorGenerators
+                            hl.FillTransparency = 0.4
+                            hl.OutlineTransparency = 0.4
+                            hl.Parent = generator
+                            GeneratorHighlights[generator] = hl
+                        end
+                    end
+                end
+            end
+            for obj, hl in pairs(GeneratorHighlights) do
+                if not obj.Parent then
+                    hl:Destroy()
+                    GeneratorHighlights[obj] = nil
+                end
+            end
+        else
+            for obj, hl in pairs(GeneratorHighlights) do
+                hl:Destroy()
+                GeneratorHighlights[obj] = nil
+            end
+        end
+    end
+end)
+
+RunService.RenderStepped:Connect(function()
+    if Config.UnlockThirdPerson then unlockThirdPerson() end
+
+    local myChar = LocalPlayer.Character
+    local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    if not myHrp then return end
+
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local char = player.Character
+            local phrp = char and char:FindFirstChild("HumanoidRootPart")
+            local phum = char and char:FindFirstChildOfClass("Humanoid")
+            if phrp and phum then
+                local distance = (myHrp.Position - phrp.Position).Magnitude
+                local isFriend = LocalPlayer:IsFriendsWith(player.UserId)
+                local hlToggle = isFriend and Config.HighlightFriends or Config.HighlightPlayer
+                local hpToggle = isFriend and Config.HealthFriends or Config.HealthPlayer
+                local trToggle = isFriend and Config.TracerFriends or Config.TracerPlayer
+                local color = isFriend and Config.ColorFriends or Config.ColorPlayer
+                if distance <= Config.MaxDistance then
+                    local hl = char:FindFirstChild("SentinelHL")
+                    if hlToggle then
+                        if not hl then
+                            hl = Instance.new("Highlight", char)
+                            hl.Name = "SentinelHL"
+                        end
+                        hl.FillColor = color
+                        hl.FillTransparency = Config.HLFillTrans
+                        hl.OutlineTransparency = Config.HLOutlineTrans
+                    elseif hl then hl:Destroy() end
+                    local bgui = phrp:FindFirstChild("SentinelHP")
+                    if hpToggle then
+                        if not bgui then
+                            bgui = Instance.new("BillboardGui", phrp)
+                            bgui.Name = "SentinelHP"
+                            bgui.Size = UDim2.new(0, 150, 0, 30)
+                            bgui.AlwaysOnTop = true
+                            bgui.StudsOffset = Vector3.new(0, 3, 0)
+                            local text = Instance.new("TextLabel", bgui)
+                            text.Size = UDim2.new(1, 0, 1, 0)
+                            text.BackgroundTransparency = 1
+                            text.TextStrokeTransparency = 0
+                            text.Font = Enum.Font.SourceSansBold
+                            text.TextSize = 13
+                        end
+                        if bgui and bgui.TextLabel then
+                            bgui.TextLabel.TextColor3 = color
+                            bgui.TextLabel.Text = string.format("%s [%d HP]", player.Name, math.round(phum.Health))
+                        end
+                    elseif bgui then bgui:Destroy() end
+                    local line = getTracer(player.UserId)
+                    if line then
+                        if trToggle then
+                            local vector, onScreen = Camera:WorldToViewportPoint(phrp.Position)
+                            if onScreen then
+                                line.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+                                line.To = Vector2.new(vector.X, vector.Y)
+                                line.Color = color
+                                line.Visible = true
+                            else
+                                line.Visible = false
+                            end
+                        else
+                            line.Visible = false
+                        end
+                    end
+                else
+                    if char:FindFirstChild("SentinelHL") then char.SentinelHL:Destroy() end
+                    if phrp:FindFirstChild("SentinelHP") then phrp.SentinelHP:Destroy() end
+                    local line = tracerCache[player.UserId]
+                    if line then line.Visible = false end
+                end
+            end
+        end
+    end
+
+    for i = #CachedMobs, 1, -1 do
+        local obj = CachedMobs[i]
+        if obj and obj.Parent then
+            if obj == myChar or obj == LocalPlayer.Character or obj.Name == LocalPlayer.Name or Players:GetPlayerFromCharacter(obj) then
+                if obj:FindFirstChild("SentinelMobHL") then obj.SentinelMobHL:Destroy() end
+                local badHrp = obj:FindFirstChild("HumanoidRootPart")
+                if badHrp and badHrp:FindFirstChild("SentinelMobHP") then badHrp.SentinelMobHP:Destroy() end
+                local badId = obj:GetDebugId()
+                if tracerCache[badId] then tracerCache[badId].Visible = false end
+                table.remove(CachedMobs, i)
+                continue
+            end
+            local mhrp = obj:FindFirstChild("HumanoidRootPart")
+            local mhum = obj:FindFirstChildOfClass("Humanoid")
+            if mhrp and mhum then
+                local distance = (myHrp.Position - mhrp.Position).Magnitude
+                local mobId = obj:GetDebugId()
+                if distance <= Config.MaxDistance and mhum.Health > 0 then
+                    local hl = obj:FindFirstChild("SentinelMobHL")
+                    if Config.HighlightMobs then
+                        if not hl then
+                            hl = Instance.new("Highlight", obj)
+                            hl.Name = "SentinelMobHL"
+                        end
+                        hl.FillColor = Config.ColorMobs
+                        hl.FillTransparency = Config.HLFillTrans
+                        hl.OutlineTransparency = Config.HLOutlineTrans
+                    elseif hl then hl:Destroy() end
+                    local bgui = mhrp:FindFirstChild("SentinelMobHP")
+                    if Config.HealthMobs then
+                        if not bgui then
+                            bgui = Instance.new("BillboardGui", mhrp)
+                            bgui.Name = "SentinelMobHP"
+                            bgui.Size = UDim2.new(0, 150, 0, 30)
+                            bgui.AlwaysOnTop = true
+                            bgui.StudsOffset = Vector3.new(0, 3, 0)
+                            local text = Instance.new("TextLabel", bgui)
+                            text.Size = UDim2.new(1, 0, 1, 0)
+                            text.BackgroundTransparency = 1
+                            text.TextStrokeTransparency = 0
+                            text.Font = Enum.Font.SourceSansBold
+                            text.TextSize = 13
+                        end
+                        if bgui and bgui.TextLabel then
+                            bgui.TextLabel.TextColor3 = Config.ColorMobs
+                            bgui.TextLabel.Text = string.format("%s [%d HP]", obj.Name, math.round(mhum.Health))
+                        end
+                    elseif bgui then bgui:Destroy() end
+                    local line = getTracer(mobId)
+                    if line then
+                        if Config.TracerMobs then
+                            local vector, onScreen = Camera:WorldToViewportPoint(mhrp.Position)
+                            if onScreen then
+                                line.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+                                line.To = Vector2.new(vector.X, vector.Y)
+                                line.Color = Config.ColorMobs
+                                line.Visible = true
+                            else
+                                line.Visible = false
+                            end
+                        else
+                            line.Visible = false
+                        end
+                    end
+                else
+                    if obj:FindFirstChild("SentinelMobHL") then obj.SentinelMobHL:Destroy() end
+                    if mhrp and mhrp:FindFirstChild("SentinelMobHP") then mhrp.SentinelMobHP:Destroy() end
+                    local line = tracerCache[mobId]
+                    if line then line.Visible = false end
+                end
+            end
+        else
+            table.remove(CachedMobs, i)
+        end
+    end
+end)
+
 Window:SelectTab(1)
-Fluent:Notify({ Title = "Sentinel v0.27.42", Content = "Script Loaded. Enjoy :D", Duration = 5 })
+Fluent:Notify({ Title = "Sentinel v7.00.10", Content = "Script Loaded. Enjoy :D", Duration = 5 })
