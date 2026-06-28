@@ -14,6 +14,9 @@ local CoreGui = game:GetService("CoreGui")
 local Teams = game:GetService("Teams")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local StarterGui = game:GetService("StarterGui")
+local HttpService = game:GetService("HttpService")
+
+local UIComponents = {}
 
 local function isPlayerCharacter(model)
     if not model or not model:IsA("Model") then return false end
@@ -97,9 +100,9 @@ local Config = {
     StaggerEnabled = true,
     InfectionActive = false,
     AnimatorEnabled = false,
-    AnimatorIdleAnimId = nil,
-    AnimatorWalkAnimId = nil,
-    AnimatorRunAnimId = nil,
+    AnimatorIdleAnimName = nil,
+    AnimatorWalkAnimName = nil,
+    AnimatorRunAnimName = nil,
     GodmodeEnabled = false,
     GodmodeHealthThreshold = 10,
     HighlightLandmines = false,
@@ -110,8 +113,11 @@ local Config = {
     RemoveDeathScreen = false,
     AntiAFKEnabled = false,
     ChatLoggerEnabled = false,
-    AlwaysShowHealth = false,
-    AlwaysShowStamina = false,
+    CustomFOVEnabled = false,
+    FOVValue = 70,
+    Theme = "Darker",
+    XrayMaterial = "ForceField",
+    XrayTransparency = 0.3,
 }
 
 local ValidCombatTools = {
@@ -168,6 +174,7 @@ local OrigOutdoorAmbient = Lighting.OutdoorAmbient
 local OrigBrightness = Lighting.Brightness
 local OrigFogEnd = Lighting.FogEnd
 local OrigFogStart = Lighting.FogStart
+local OrigFOV = Camera.FieldOfView
 
 local FakeDeathAnimTrack = nil
 local FakeInjuredTrack = nil
@@ -726,8 +733,7 @@ RunService.Heartbeat:Connect(function(dt)
     local move = Vector3.new()
     if UserInputService:IsKeyDown(Enum.KeyCode.W) then move = move + Camera.CFrame.LookVector end
     if UserInputService:IsKeyDown(Enum.KeyCode.S) then move = move - Camera.CFrame.LookVector end
-    if UserInputService:IsKeyDown(Enum.KeyCode.A) then move = move - Camera.CFrame.RightVector end
-    if UserInputService:IsKeyDown(Enum.KeyCode.D) then move = move + Camera.CFrame.RightVector end
+    if UserInputService:IsKeyDown(Enum.KeyCode.A) then move = move - Camera.CFrame.RightVector end    if UserInputService:IsKeyDown(Enum.KeyCode.D) then move = move + Camera.CFrame.RightVector end
     if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move = move + Vector3.new(0, 1, 0) end
     if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then move = move - Vector3.new(0, 1, 0) end
 
@@ -1803,34 +1809,13 @@ RunService.RenderStepped:Connect(function(dt)
         if gameRadiationTint then gameRadiationTint.Contrast = 0 end
     end
 
-    if Config.AlwaysShowHealth then
-        local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-        if playerGui then
-            local gui = playerGui:FindFirstChild("Gui")
-            if gui then
-                local statusFrame = gui:FindFirstChild("statusFrame")
-                if statusFrame then
-                    local health = statusFrame:FindFirstChild("health")
-                    if health then
-                        health.Visible = true
-                    end
-                end
-            end
+    if Config.CustomFOVEnabled then
+        if Camera.FieldOfView ~= Config.FOVValue then
+            TweenService:Create(Camera, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { FieldOfView = Config.FOVValue }):Play()
         end
-    end
-    if Config.AlwaysShowStamina then
-        local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-        if playerGui then
-            local gui = playerGui:FindFirstChild("Gui")
-            if gui then
-                local statusFrame = gui:FindFirstChild("statusFrame")
-                if statusFrame then
-                    local stamina = statusFrame:FindFirstChild("stamina")
-                    if stamina then
-                        stamina.Visible = true
-                    end
-                end
-            end
+    else
+        if Camera.FieldOfView ~= OrigFOV then
+            TweenService:Create(Camera, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { FieldOfView = OrigFOV }):Play()
         end
     end
 
@@ -1927,12 +1912,12 @@ local function applyAnimatorState()
     if newState ~= animatorLastState then
         animatorLastState = newState
         stopAllAnimatorTracks()
-        if newState == "idle" and Config.AnimatorIdleAnimId then
-            animatorIdleTrack = playAnimationOnHumanoid(Config.AnimatorIdleAnimId, true)
-        elseif newState == "walk" and Config.AnimatorWalkAnimId then
-            animatorWalkTrack = playAnimationOnHumanoid(Config.AnimatorWalkAnimId, true)
-        elseif newState == "run" and Config.AnimatorRunAnimId then
-            animatorRunTrack = playAnimationOnHumanoid(Config.AnimatorRunAnimId, true)
+        if newState == "idle" and Config.AnimatorIdleAnimName then
+            animatorIdleTrack = playAnimationOnHumanoid(toggleAnims[Config.AnimatorIdleAnimName], true)
+        elseif newState == "walk" and Config.AnimatorWalkAnimName then
+            animatorWalkTrack = playAnimationOnHumanoid(toggleAnims[Config.AnimatorWalkAnimName], true)
+        elseif newState == "run" and Config.AnimatorRunAnimName then
+            animatorRunTrack = playAnimationOnHumanoid(toggleAnims[Config.AnimatorRunAnimName], true)
         end
     end
 end
@@ -1941,7 +1926,7 @@ local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/
 
 local Window = Fluent:CreateWindow({
     Title = "Sentinel - Examination",
-    SubTitle = " | version : 7.00.10",
+    SubTitle = " | version : 8.00.40",
     TabWidth = 160,
     Size = UDim2.fromOffset(520, 420),
     Acrylic = true,
@@ -1966,11 +1951,38 @@ local Tabs = {
     About = Window:AddTab({ Title = "About", Icon = "info" }),
 }
 
+local function storeComponent(id, component)
+    UIComponents[id] = component
+end
+
+local function applyConfigToUI()
+    for key, component in pairs(UIComponents) do
+        if Config[key] ~= nil then
+            if component.SetValue then
+                pcall(function()
+                    component:SetValue(Config[key])
+                end)
+            end
+        end
+    end
+end
+
+if not isfolder("sentinel/configs/") then
+    makefolder("sentinel/configs/")
+end
+
 local function CreatePlayerTab()
     local WalkspeedSection = Tabs.Player:AddSection("Walkspeed Settings")
-    WalkspeedSection:AddToggle("WSToggle", { Title = "Enable Speed Modifiers", Default = false }):OnChanged(function(v) Config.SpeedHackEnabled = v end)
-    WalkspeedSection:AddSlider("WSSlider", { Title = "WalkSpeed", Min = 1, Max = 150, Default = 16, Rounding = 0 }):OnChanged(function(v) Config.WalkSpeedValue = v end)
-    WalkspeedSection:AddToggle("InfiniteStaminaToggle", { Title = "Infinite Stamina [BETA]", Default = false }):OnChanged(function(v)
+    local wstoggle = WalkspeedSection:AddToggle("WSToggle", { Title = "Enable Speed Modifiers", Default = false })
+    wstoggle:OnChanged(function(v) Config.SpeedHackEnabled = v end)
+    storeComponent("SpeedHackEnabled", wstoggle)
+
+    local wsslider = WalkspeedSection:AddSlider("WSSlider", { Title = "WalkSpeed", Min = 1, Max = 150, Default = 16, Rounding = 0 })
+    wsslider:OnChanged(function(v) Config.WalkSpeedValue = v end)
+    storeComponent("WalkSpeedValue", wsslider)
+
+    local infstam = WalkspeedSection:AddToggle("InfiniteStaminaToggle", { Title = "Infinite Stamina [BETA]", Default = false })
+    infstam:OnChanged(function(v)
         Config.InfiniteStaminaEnabled = v
         if not v then
             isShiftHeld = false
@@ -1983,15 +1995,26 @@ local function CreatePlayerTab()
             end
         end
     end)
+    storeComponent("InfiniteStaminaEnabled", infstam)
 
     local JumpSection = Tabs.Player:AddSection("Jump Settings")
-    JumpSection:AddToggle("JPToggle", { Title = "Enable JumpPower", Default = false }):OnChanged(function(v) Config.JumpPowerEnabled = v end)
-    JumpSection:AddSlider("JPSlider", { Title = "JumpPower", Min = 5, Max = 75, Default = 30, Rounding = 0 }):OnChanged(function(v) Config.JumpPowerValue = v end)
-    JumpSection:AddToggle("InfJump", { Title = "Infinite Jump", Default = false }):OnChanged(function(v) Config.InfiniteJump = v end)
+    local jptoggle = JumpSection:AddToggle("JPToggle", { Title = "Enable JumpPower", Default = false })
+    jptoggle:OnChanged(function(v) Config.JumpPowerEnabled = v end)
+    storeComponent("JumpPowerEnabled", jptoggle)
+
+    local jpslider = JumpSection:AddSlider("JPSlider", { Title = "JumpPower", Min = 5, Max = 75, Default = 30, Rounding = 0 })
+    jpslider:OnChanged(function(v) Config.JumpPowerValue = v end)
+    storeComponent("JumpPowerValue", jpslider)
+
+    local infjump = JumpSection:AddToggle("InfJump", { Title = "Infinite Jump", Default = false })
+    infjump:OnChanged(function(v) Config.InfiniteJump = v end)
+    storeComponent("InfiniteJump", infjump)
+
     JumpSection:AddButton({ Title = "Bypass Jump AC", Callback = function() Config.JumpBypassActive = not Config.JumpBypassActive end })
 
     local PhysicSection = Tabs.Player:AddSection("Physic Settings")
-    PhysicSection:AddToggle("FlyToggle", { Title = "Fly", Default = false }):OnChanged(function(v)
+    local flytoggle = PhysicSection:AddToggle("FlyToggle", { Title = "Fly", Default = false })
+    flytoggle:OnChanged(function(v)
         Config.FlyEnabled = v
         if v then
             CurrentFlyType = Config.FlyType
@@ -2001,19 +2024,30 @@ local function CreatePlayerTab()
             enableFly(false)
         end
     end)
-    PhysicSection:AddDropdown("FlyTypeDropdown", { Title = "Fly Method", Values = {"CFrame", "BodyVelocity [BEST]", "Seat [UNDETECTED]"}, Default = "CFrame" }):OnChanged(function(v)
+    storeComponent("FlyEnabled", flytoggle)
+
+    local flydropdown = PhysicSection:AddDropdown("FlyTypeDropdown", { Title = "Fly Method", Values = {"CFrame", "BodyVelocity [BEST]", "Seat [UNDETECTED]"}, Default = "CFrame" })
+    flydropdown:OnChanged(function(v)
         Config.FlyType = v
         if Config.FlyEnabled then
             CurrentFlyType = v
             enableFly(true)
         end
     end)
-    PhysicSection:AddSlider("FlySpeedSlider", { Title = "Fly Speed", Min = 1, Max = 100, Default = 50, Rounding = 0 }):OnChanged(function(v)
+    storeComponent("FlyType", flydropdown)
+
+    local flyslider = PhysicSection:AddSlider("FlySpeedSlider", { Title = "Fly Speed", Min = 1, Max = 100, Default = 50, Rounding = 0 })
+    flyslider:OnChanged(function(v)
         Config.FlySpeed = v
         FlySpeed = v
     end)
-    PhysicSection:AddToggle("NoclipToggle", { Title = "Noclip", Default = false }):OnChanged(function(v) Config.NoclipEnabled = v end)
-    PhysicSection:AddToggle("StaggerToggle", {
+    storeComponent("FlySpeed", flyslider)
+
+    local noclip = PhysicSection:AddToggle("NoclipToggle", { Title = "Noclip", Default = false })
+    noclip:OnChanged(function(v) Config.NoclipEnabled = v end)
+    storeComponent("NoclipEnabled", noclip)
+
+    local stagger = PhysicSection:AddToggle("StaggerToggle", {
         Title = "Disable Stagger",
         Default = false,
         Callback = function(value)
@@ -2030,9 +2064,10 @@ local function CreatePlayerTab()
             end
         end
     })
+    storeComponent("StaggerEnabled", stagger)
 
     local LandminesSection = Tabs.Player:AddSection("Landmines")
-    LandminesSection:AddToggle("IgnoreLandmineToggle", {
+    local ignoremine = LandminesSection:AddToggle("IgnoreLandmineToggle", {
         Title = "Ignore Landmines [BETA]",
         Default = false,
         Callback = function(v)
@@ -2090,19 +2125,27 @@ local function CreatePlayerTab()
             end
         end
     })
+    storeComponent("IgnoreLandmine", ignoremine)
+
     LandminesSection:AddButton({ Title = "Delete All Landmines", Callback = deleteAllLandmines })
 
     local GodmodSection = Tabs.Player:AddSection("God mod [BETA]")
-    GodmodSection:AddToggle("GodmodeToggle", { Title = "Godmode", Default = false }):OnChanged(function(v)
+    local godmode = GodmodSection:AddToggle("GodmodeToggle", { Title = "Godmode", Default = false })
+    godmode:OnChanged(function(v)
         Config.GodmodeEnabled = v
         if v then
             GodmodePreviousPosition = nil
             GodmodeTeleported = false
         end
     end)
-    GodmodSection:AddSlider("GodmodeHealthSlider", { Title = "Health Threshold", Min = 1, Max = 99, Default = 10, Rounding = 0 }):OnChanged(function(v)
+    storeComponent("GodmodeEnabled", godmode)
+
+    local godhealth = GodmodSection:AddSlider("GodmodeHealthSlider", { Title = "Health Threshold", Min = 1, Max = 99, Default = 10, Rounding = 0 })
+    godhealth:OnChanged(function(v)
         Config.GodmodeHealthThreshold = v
     end)
+    storeComponent("GodmodeHealthThreshold", godhealth)
+
     GodmodSection:AddButton({ Title = "Teleport to Baseplate", Callback = function()
         local char = LocalPlayer.Character
         if char and char:FindFirstChild("HumanoidRootPart") then
@@ -2127,19 +2170,28 @@ local function CreatePlayerTab()
     local HealthSection = Tabs.Player:AddSection("Character Health")
     HealthSection:AddButton({ Title = "Suicide", Callback = function() local character = LocalPlayer.Character; local humanoid = character and character:FindFirstChildOfClass("Humanoid"); if humanoid then humanoid.Health = 0 end end })
     HealthSection:AddButton({ Title = "Suicide with Animation", Callback = suicideWithAnimation })
-    HealthSection:AddToggle("FakeDeathToggle", { Title = "Fake Death", Default = false }):OnChanged(function(v)
+    local fakedeath = HealthSection:AddToggle("FakeDeathToggle", { Title = "Fake Death", Default = false })
+    fakedeath:OnChanged(function(v)
         Config.FakeDeath = v
         toggleFakeDeath()
     end)
-    HealthSection:AddToggle("FakeInjuredToggle", { Title = "Fake Injured (idle)", Default = false }):OnChanged(function(v)
+    storeComponent("FakeDeath", fakedeath)
+
+    local fakeinjured = HealthSection:AddToggle("FakeInjuredToggle", { Title = "Fake Injured (idle)", Default = false })
+    fakeinjured:OnChanged(function(v)
         Config.FakeInjured = v
         toggleFakeInjured()
     end)
+    storeComponent("FakeInjured", fakeinjured)
 
     local InfectionSection = Tabs.Player:AddSection("Player Infection")
     InfectionSection:AddButton({
         Title = "Fake Controllable Infected",
         Callback = function()
+            if not canInfect then
+                Fluent:Notify({ Title = "Infection", Content = "You must respawn before starting a new infection.", Duration = 3 })
+                return
+            end
             if InfectionActive then
                 Fluent:Notify({ Title = "Infection", Content = "Already active!", Duration = 2 })
                 return
@@ -2150,6 +2202,10 @@ local function CreatePlayerTab()
     InfectionSection:AddButton({
         Title = "Fake Non-Controllable Infected",
         Callback = function()
+            if not canInfect then
+                Fluent:Notify({ Title = "Infection", Content = "You must respawn before starting a new infection.", Duration = 3 })
+                return
+            end
             if InfectionActive then
                 Fluent:Notify({ Title = "Infection", Content = "Already active!", Duration = 2 })
                 return
@@ -2158,8 +2214,12 @@ local function CreatePlayerTab()
         end
     })
     InfectionSection:AddButton({
-        Title = "Get Infected",
+        Title = "Get Infected [a fifty-fifty chance to work..]",
         Callback = function()
+            if not canInfect then
+                Fluent:Notify({ Title = "Infection", Content = "You must respawn before starting a new infection.", Duration = 3 })
+                return
+            end
             if InfectionActive then
                 Fluent:Notify({ Title = "Infection", Content = "Already active!", Duration = 2 })
                 return
@@ -2168,8 +2228,8 @@ local function CreatePlayerTab()
             if not char then return end
             local humanoid = char:FindFirstChildOfClass("Humanoid")
             if not humanoid then return end
-            if humanoid.Health < 92 then
-                Fluent:Notify({ Title = "Infection Failed", Content = "Sentinel was unable to infect you. You do not meet all the requirements (92 HP+).", Duration = 7 })
+            if humanoid.Health < 100 then
+                Fluent:Notify({ Title = "Infection Failed", Content = "Sentinel was unable to infect you. You do not meet all the requirements (100 HP+).", Duration = 7 })
                 return
             end
             local hrp = char:FindFirstChild("HumanoidRootPart")
@@ -2220,7 +2280,7 @@ local function CreatePlayerTab()
                 end)
             end
 
-            teleportTo(Vector3.new(-90, 37, -1759))
+            teleportTo(Vector3.new(-90, 46.8, -1759))
             task.wait(3)
             char:PivotTo(originalPos)
             task.wait(0.5)
@@ -2236,7 +2296,7 @@ local function CreatePlayerTab()
     })
 
     local AnimatorSection = Tabs.Player:AddSection("Animator")
-    AnimatorSection:AddToggle("AnimatorApplyToggle", {
+    local animatorToggle = AnimatorSection:AddToggle("AnimatorApplyToggle", {
         Title = "Apply Animator Config",
         Default = false,
         Callback = function(v)
@@ -2247,30 +2307,37 @@ local function CreatePlayerTab()
             end
         end
     })
-    AnimatorSection:AddDropdown("IdleAnimDropdown", {
+    storeComponent("AnimatorEnabled", animatorToggle)
+
+    local idleDropdown = AnimatorSection:AddDropdown("IdleAnimDropdown", {
         Title = "Idle Animation",
         Values = idleAnimNames,
         Default = nil,
         Callback = function(value)
-            Config.AnimatorIdleAnimId = toggleAnims[value]
+            Config.AnimatorIdleAnimName = value
         end
     })
-    AnimatorSection:AddDropdown("WalkAnimDropdown", {
+    storeComponent("AnimatorIdleAnimName", idleDropdown)
+
+    local walkDropdown = AnimatorSection:AddDropdown("WalkAnimDropdown", {
         Title = "Walk Animation",
         Values = walkAnimNames,
         Default = nil,
         Callback = function(value)
-            Config.AnimatorWalkAnimId = toggleAnims[value]
+            Config.AnimatorWalkAnimName = value
         end
     })
-    AnimatorSection:AddDropdown("RunAnimDropdown", {
-        Title = "Run Animation (Shift)",
+    storeComponent("AnimatorWalkAnimName", walkDropdown)
+
+    local runDropdown = AnimatorSection:AddDropdown("RunAnimDropdown", {
+        Title = "Run Animation",
         Values = runAnimNames,
         Default = nil,
         Callback = function(value)
-            Config.AnimatorRunAnimId = toggleAnims[value]
+            Config.AnimatorRunAnimName = value
         end
     })
+    storeComponent("AnimatorRunAnimName", runDropdown)
 
     local CustomizationSection = Tabs.Player:AddSection("Customization")
     CustomizationSection:AddInput("CharacterNameInput", {
@@ -2291,7 +2358,7 @@ local function CreatePlayerTab()
             applyNametags(LocalPlayer.Character)
         end
     })
-    CustomizationSection:AddColorpicker("TagColorPicker", {
+    local tagcolor = CustomizationSection:AddColorpicker("TagColorPicker", {
         Title = "Nametag Color",
         Default = Config.TagColor,
         Callback = function(value)
@@ -2299,7 +2366,9 @@ local function CreatePlayerTab()
             applyNametags(LocalPlayer.Character)
         end
     })
-    CustomizationSection:AddDropdown("TeamDropdown", {
+    storeComponent("TagColor", tagcolor)
+
+    local teamdropdown = CustomizationSection:AddDropdown("TeamDropdown", {
         Title = "Team",
         Values = {"Menlo", "RIF", "RSU"},
         Default = "Menlo",
@@ -2308,24 +2377,41 @@ local function CreatePlayerTab()
             changeTeam(value)
         end
     })
+    storeComponent("Team", teamdropdown)
 end
 
 local function CreateCombatTab()
     local WeaponActionsSection = Tabs.Combat:AddSection("Fists Settings")
-    WeaponActionsSection:AddToggle("GAttackToggle", { Title = "Enable G-Key Attack", Default = true }):OnChanged(function(v) Config.GAttackEnabled = v end)
-    WeaponActionsSection:AddToggle("BypassCDToggle", { Title = "Bypass Client Cooldowns", Default = false }):OnChanged(function(v) Config.BypassCombatCooldowns = v end)
-    WeaponActionsSection:AddToggle("AutoSpamToggle", { Title = "Auto-Spam Attack", Default = false }):OnChanged(function(v) Config.AutoSpamAttack = v end)
+    local gattack = WeaponActionsSection:AddToggle("GAttackToggle", { Title = "Enable G-Key Attack", Default = true })
+    gattack:OnChanged(function(v) Config.GAttackEnabled = v end)
+    storeComponent("GAttackEnabled", gattack)
+
+    local bypasscd = WeaponActionsSection:AddToggle("BypassCDToggle", { Title = "Bypass Client Cooldowns", Default = false })
+    bypasscd:OnChanged(function(v) Config.BypassCombatCooldowns = v end)
+    storeComponent("BypassCombatCooldowns", bypasscd)
+
+    local autospam = WeaponActionsSection:AddToggle("AutoSpamToggle", { Title = "Auto-Spam Attack", Default = false })
+    autospam:OnChanged(function(v) Config.AutoSpamAttack = v end)
+    storeComponent("AutoSpamAttack", autospam)
 
     local GunModsSection = Tabs.Combat:AddSection("Gun Mod")
-    GunModsSection:AddToggle("AntiRecoilToggle", { Title = "No Recoil [ALPHA]", Default = false }):OnChanged(function(v) Config.AntiCamShake = v end)
-    GunModsSection:AddToggle("ExpandHitbox", { Title = "Hitbox Expander", Default = false }):OnChanged(function(v)
+    local antirecoil = GunModsSection:AddToggle("AntiRecoilToggle", { Title = "No Recoil [ALPHA]", Default = false })
+    antirecoil:OnChanged(function(v) Config.AntiCamShake = v end)
+    storeComponent("AntiCamShake", antirecoil)
+
+    local hitbox = GunModsSection:AddToggle("ExpandHitbox", { Title = "Hitbox Expander", Default = false })
+    hitbox:OnChanged(function(v)
         HitboxEnabled = v
         UpdateAllHitboxes(HitboxEnabled)
     end)
-    GunModsSection:AddToggle("SilencerToggle", { Title = "Silencer", Default = false }):OnChanged(function(v)
+    storeComponent("HitboxEnabled", hitbox)
+
+    local silencer = GunModsSection:AddToggle("SilencerToggle", { Title = "Silencer", Default = false })
+    silencer:OnChanged(function(v)
         Config.SilencerEnabled = v
         updateSilencers(v)
     end)
+    storeComponent("SilencerEnabled", silencer)
 
     local ShieldRemoverSection = Tabs.Combat:AddSection("Shield Remover")
     ShieldRemoverSection:AddButton({ Title = "Delete All Shields", Callback = function()
@@ -2382,52 +2468,37 @@ local function CreateWorldTab()
         })
     end
 
-    local AtmosphereSection = Tabs.World:AddSection("Atmosphere")
-    AtmosphereSection:AddToggle("FullBright", { Title = "Full Bright", Default = false }):OnChanged(function(v)
-        Config.FullBright = v
-        if v then
-            Lighting.Ambient = Color3.fromRGB(255, 255, 255)
-            Lighting.Brightness = 2
-        else
-            Lighting.Ambient = OrigAmbient
-            Lighting.Brightness = OrigBrightness
-        end
-    end)
-    AtmosphereSection:AddToggle("NoFog", { Title = "No Fog", Default = false }):OnChanged(function(v)
-        Config.NoFog = v
-        if v then
-            Lighting.FogEnd = 999999999
-            Lighting.FogStart = 999999999
-        else
-            Lighting.FogEnd = OrigFogEnd
-            Lighting.FogStart = OrigFogStart
-        end
-    end)
-
-    local RadiationsSection = Tabs.World:AddSection("Radiations")
-    RadiationsSection:AddToggle("HazardImmToggle", { Title = "Anti-Radiation Effect", Default = false }):OnChanged(function(v) Config.ImmuneLookHazard = v end)
-    RadiationsSection:AddButton({ Title = "Remove Elephant Foot (LookAtMe)", Callback = removeElephantFoot })
-
     local XraySection = Tabs.World:AddSection("Xray Settings [BETA]")
-    XraySection:AddToggle("XrayToggle", { Title = "Enable X-Ray", Default = false }):OnChanged(function(v)
+    local xraytoggle = XraySection:AddToggle("XrayToggle", { Title = "Enable X-Ray", Default = false })
+    xraytoggle:OnChanged(function(v)
         XrayEnabled = v
         updateXray()
     end)
-    XraySection:AddSlider("XrayDistanceSlider", { Title = "Distance", Min = 1, Max = 1000, Default = 30, Rounding = 0 }):OnChanged(function(v)
+    storeComponent("Xray", xraytoggle)
+
+    local xraydist = XraySection:AddSlider("XrayDistanceSlider", { Title = "Distance", Min = 1, Max = 1000, Default = 30, Rounding = 0 })
+    xraydist:OnChanged(function(v)
         XrayDistance = v
         if XrayEnabled then updateXray() end
     end)
-    XraySection:AddSlider("XrayTransparencySlider", { Title = "Transparency", Min = 0, Max = 1, Default = 0.3, Rounding = 2 }):OnChanged(function(v)
+    storeComponent("XrayDistance", xraydist)
+
+    local xraytrans = XraySection:AddSlider("XrayTransparencySlider", { Title = "Transparency", Min = 0, Max = 1, Default = 0.3, Rounding = 2 })
+    xraytrans:OnChanged(function(v)
         XrayTransparency = v
         updateXrayMaterialAndTransparency()
         if XrayEnabled then updateXray() end
     end)
-    XraySection:AddDropdown("XrayMaterialDropdown", {
+    storeComponent("XrayTransparency", xraytrans)
+
+    local xraymat = XraySection:AddDropdown("XrayMaterialDropdown", {
         Title = "Material",
         Values = {"Plastic", "Neon", "ForceField", "Glass", "SmoothPlastic"},
         Default = "ForceField",
         Multi = false
-    }):OnChanged(function(v)
+    })
+    xraymat:OnChanged(function(v)
+        Config.XrayMaterial = v
         local materialMap = {
             Plastic = Enum.Material.Plastic,
             Neon = Enum.Material.Neon,
@@ -2439,14 +2510,66 @@ local function CreateWorldTab()
         updateXrayMaterialAndTransparency()
         if XrayEnabled then updateXray() end
     end)
+    storeComponent("XrayMaterial", xraymat)
 
     local CameraSection = Tabs.World:AddSection("Camera Settings")
-    CameraSection:AddToggle("UnlockThirdPerson", { Title = "Unlock Third Person (Zoomable)", Default = false }):OnChanged(function(v)
+    local unlockthird = CameraSection:AddToggle("UnlockThirdPerson", { Title = "Unlock Third Person (Zoomable)", Default = false })
+    unlockthird:OnChanged(function(v)
         Config.UnlockThirdPerson = v
     end)
+    storeComponent("UnlockThirdPerson", unlockthird)
+
+    local fovtoggle = CameraSection:AddToggle("CustomFOVToggle", { Title = "Custom FOV", Default = false })
+    fovtoggle:OnChanged(function(v)
+        Config.CustomFOVEnabled = v
+    end)
+    storeComponent("CustomFOVEnabled", fovtoggle)
+
+    local fovslider = CameraSection:AddSlider("FOVSlider", { Title = "Field of View", Min = 1, Max = 120, Default = 70, Rounding = 0 })
+    fovslider:OnChanged(function(v)
+        Config.FOVValue = v
+    end)
+    storeComponent("FOVValue", fovslider)
+
+    local AtmosphereSection = Tabs.World:AddSection("Atmosphere")
+    local fullbright = AtmosphereSection:AddToggle("FullBright", { Title = "Full Bright", Default = false })
+    fullbright:OnChanged(function(v)
+        Config.FullBright = v
+        if v then
+            Lighting.Ambient = Color3.fromRGB(255, 255, 255)
+            Lighting.Brightness = 2
+        else
+            Lighting.Ambient = OrigAmbient
+            Lighting.Brightness = OrigBrightness
+        end
+    end)
+    storeComponent("FullBright", fullbright)
+
+    local nofog = AtmosphereSection:AddToggle("NoFog", { Title = "No Fog", Default = false })
+    nofog:OnChanged(function(v)
+        Config.NoFog = v
+        if v then
+            Lighting.FogEnd = 999999999
+            Lighting.FogStart = 999999999
+        else
+            Lighting.FogEnd = OrigFogEnd
+            Lighting.FogStart = OrigFogStart
+        end
+    end)
+    storeComponent("NoFog", nofog)
+
+    local RadiationsSection = Tabs.World:AddSection("Radiations")
+    local hazard = RadiationsSection:AddToggle("HazardImmToggle", { Title = "Anti-Radiation Effect", Default = false })
+    hazard:OnChanged(function(v) Config.ImmuneLookHazard = v end)
+    storeComponent("ImmuneLookHazard", hazard)
+
+    RadiationsSection:AddButton({ Title = "Remove Elephant Foot (LookAtMe)", Callback = removeElephantFoot })
 
     local VisualMechanicsSection = Tabs.World:AddSection("Screen Customization")
-    VisualMechanicsSection:AddToggle("AutoWipe", { Title = "Auto-Wipe Screen Blood", Default = false }):OnChanged(function(v) Config.AutoWipeBlood = v end)
+    local autowipe = VisualMechanicsSection:AddToggle("AutoWipe", { Title = "Auto-Wipe Screen Blood", Default = false })
+    autowipe:OnChanged(function(v) Config.AutoWipeBlood = v end)
+    storeComponent("AutoWipeBlood", autowipe)
+
     VisualMechanicsSection:AddButton({ Title = "Instant Clean Screen", Callback = function()
         local gui = LocalPlayer.PlayerGui:FindFirstChild("Gui")
         if gui then
@@ -2469,7 +2592,8 @@ local function CreateWorldTab()
         end
     end })
     WorldNVGSection:AddButton({ Title = "Break Gasmask", Callback = BreakGasmask })
-    WorldNVGSection:AddToggle("InfiniteNightVisionToggle", { Title = "Infinite Night Vision", Default = false }):OnChanged(function(v)
+    local infnv = WorldNVGSection:AddToggle("InfiniteNightVisionToggle", { Title = "Infinite Night Vision", Default = false })
+    infnv:OnChanged(function(v)
         Config.InfiniteNightVision = v
         if v then
             if InfiniteNVConnection then InfiniteNVConnection:Disconnect() end
@@ -2572,6 +2696,7 @@ local function CreateWorldTab()
             end
         end
     end)
+    storeComponent("InfiniteNightVision", infnv)
 
     local MapRemoverSection = Tabs.World:AddSection("Map Remover")
     MapRemoverSection:AddButton({ Title = "Remove Arabic dud", Callback = removeArabicDud })
@@ -2604,30 +2729,72 @@ end
 
 local function CreateESPTab()
     local GlobalESPSection = Tabs.ESP:AddSection("ESP Settings")
-    GlobalESPSection:AddSlider("MaxDist", { Title = "Max ESP Distance", Min = 0, Max = 1000, Default = 250, Rounding = 0 }):OnChanged(function(v) Config.MaxDistance = v end)
-    GlobalESPSection:AddSlider("FillTrans", { Title = "Highlight Fill Transparency", Min = 0, Max = 1, Default = 0.7, Rounding = 1 }):OnChanged(function(v) Config.HLFillTrans = v end)
-    GlobalESPSection:AddSlider("OutTrans", { Title = "Highlight Outline Transparency", Min = 0, Max = 1, Default = 1.0, Rounding = 1 }):OnChanged(function(v) Config.HLOutlineTrans = v end)
+    local maxdist = GlobalESPSection:AddSlider("MaxDist", { Title = "Max ESP Distance", Min = 0, Max = 1000, Default = 250, Rounding = 0 })
+    maxdist:OnChanged(function(v) Config.MaxDistance = v end)
+    storeComponent("MaxDistance", maxdist)
+
+    local filltrans = GlobalESPSection:AddSlider("FillTrans", { Title = "Highlight Fill Transparency", Min = 0, Max = 1, Default = 0.7, Rounding = 1 })
+    filltrans:OnChanged(function(v) Config.HLFillTrans = v end)
+    storeComponent("HLFillTrans", filltrans)
+
+    local outtrans = GlobalESPSection:AddSlider("OutTrans", { Title = "Highlight Outline Transparency", Min = 0, Max = 1, Default = 1.0, Rounding = 1 })
+    outtrans:OnChanged(function(v) Config.HLOutlineTrans = v end)
+    storeComponent("HLOutlineTrans", outtrans)
 
     local PlayerESPSection = Tabs.ESP:AddSection("Player ESP")
-    PlayerESPSection:AddToggle("HLPlayer", { Title = "Highlight Player", Default = false }):OnChanged(function(v) Config.HighlightPlayer = v end)
-    PlayerESPSection:AddToggle("HPlayer", { Title = "ESP Health Player", Default = false }):OnChanged(function(v) Config.HealthPlayer = v end)
-    PlayerESPSection:AddToggle("TPlayer", { Title = "Tracer Player", Default = false }):OnChanged(function(v) Config.TracerPlayer = v end)
-    PlayerESPSection:AddColorpicker("CPPlayer", { Title = "Player ESP Color", Default = Config.ColorPlayer }):OnChanged(function(v) Config.ColorPlayer = v end)
+    local hlplayer = PlayerESPSection:AddToggle("HLPlayer", { Title = "Highlight Player", Default = false })
+    hlplayer:OnChanged(function(v) Config.HighlightPlayer = v end)
+    storeComponent("HighlightPlayer", hlplayer)
+
+    local hplayer = PlayerESPSection:AddToggle("HPlayer", { Title = "ESP Health Player", Default = false })
+    hplayer:OnChanged(function(v) Config.HealthPlayer = v end)
+    storeComponent("HealthPlayer", hplayer)
+
+    local tplayer = PlayerESPSection:AddToggle("TPlayer", { Title = "Tracer Player", Default = false })
+    tplayer:OnChanged(function(v) Config.TracerPlayer = v end)
+    storeComponent("TracerPlayer", tplayer)
+
+    local cplayer = PlayerESPSection:AddColorpicker("CPPlayer", { Title = "Player ESP Color", Default = Config.ColorPlayer })
+    cplayer:OnChanged(function(v) Config.ColorPlayer = v end)
+    storeComponent("ColorPlayer", cplayer)
 
     local FriendESPSection = Tabs.ESP:AddSection("Friend ESP [ALPHA]")
-    FriendESPSection:AddToggle("HLFriends", { Title = "Highlight Friends", Default = false }):OnChanged(function(v) Config.HighlightFriends = v end)
-    FriendESPSection:AddToggle("HFriends", { Title = "ESP Health Friend", Default = false }):OnChanged(function(v) Config.HealthFriends = v end)
-    FriendESPSection:AddToggle("TFriends", { Title = "Tracer Friend", Default = false }):OnChanged(function(v) Config.TracerFriends = v end)
-    FriendESPSection:AddColorpicker("CPFriends", { Title = "Friend ESP Color", Default = Config.ColorFriends }):OnChanged(function(v) Config.ColorFriends = v end)
+    local hlfriends = FriendESPSection:AddToggle("HLFriends", { Title = "Highlight Friends", Default = false })
+    hlfriends:OnChanged(function(v) Config.HighlightFriends = v end)
+    storeComponent("HighlightFriends", hlfriends)
+
+    local hfriends = FriendESPSection:AddToggle("HFriends", { Title = "ESP Health Friend", Default = false })
+    hfriends:OnChanged(function(v) Config.HealthFriends = v end)
+    storeComponent("HealthFriends", hfriends)
+
+    local tfriends = FriendESPSection:AddToggle("TFriends", { Title = "Tracer Friend", Default = false })
+    tfriends:OnChanged(function(v) Config.TracerFriends = v end)
+    storeComponent("TracerFriends", tfriends)
+
+    local cfriends = FriendESPSection:AddColorpicker("CPFriends", { Title = "Friend ESP Color", Default = Config.ColorFriends })
+    cfriends:OnChanged(function(v) Config.ColorFriends = v end)
+    storeComponent("ColorFriends", cfriends)
 
     local MobESPSection = Tabs.ESP:AddSection("Entities ESP")
-    MobESPSection:AddToggle("HLMobs", { Title = "Highlight Entities", Default = false }):OnChanged(function(v) Config.HighlightMobs = v end)
-    MobESPSection:AddToggle("HMobs", { Title = "ESP Health EntitiesMobs", Default = false }):OnChanged(function(v) Config.HealthMobs = v end)
-    MobESPSection:AddToggle("TMobs", { Title = "Tracer Entities", Default = false }):OnChanged(function(v) Config.TracerMobs = v end)
-    MobESPSection:AddColorpicker("CPMobs", { Title = "Entities ESP Color", Default = Config.ColorMobs }):OnChanged(function(v) Config.ColorMobs = v end)
+    local hlmobs = MobESPSection:AddToggle("HLMobs", { Title = "Highlight Entities", Default = false })
+    hlmobs:OnChanged(function(v) Config.HighlightMobs = v end)
+    storeComponent("HighlightMobs", hlmobs)
+
+    local hmobs = MobESPSection:AddToggle("HMobs", { Title = "ESP Health EntitiesMobs", Default = false })
+    hmobs:OnChanged(function(v) Config.HealthMobs = v end)
+    storeComponent("HealthMobs", hmobs)
+
+    local tmobs = MobESPSection:AddToggle("TMobs", { Title = "Tracer Entities", Default = false })
+    tmobs:OnChanged(function(v) Config.TracerMobs = v end)
+    storeComponent("TracerMobs", tmobs)
+
+    local cmobs = MobESPSection:AddColorpicker("CPMobs", { Title = "Entities ESP Color", Default = Config.ColorMobs })
+    cmobs:OnChanged(function(v) Config.ColorMobs = v end)
+    storeComponent("ColorMobs", cmobs)
 
     local OtherESPSection = Tabs.ESP:AddSection("Other ESP")
-    OtherESPSection:AddToggle("HighlightLandmines", { Title = "Highlight Landmines", Default = false }):OnChanged(function(v)
+    local hllandmines = OtherESPSection:AddToggle("HighlightLandmines", { Title = "Highlight Landmines", Default = false })
+    hllandmines:OnChanged(function(v)
         Config.HighlightLandmines = v
         if not v then
             for _, hl in pairs(LandmineHighlights) do
@@ -2636,7 +2803,9 @@ local function CreateESPTab()
             table.clear(LandmineHighlights)
         end
     end)
-    OtherESPSection:AddColorpicker("ColorLandmines", {
+    storeComponent("HighlightLandmines", hllandmines)
+
+    local clandmines = OtherESPSection:AddColorpicker("ColorLandmines", {
         Title = "Landmines Color",
         Default = Config.ColorLandmines,
         Callback = function(v)
@@ -2646,7 +2815,10 @@ local function CreateESPTab()
             end
         end
     })
-    OtherESPSection:AddToggle("HighlightGenerators", { Title = "Highlight Generators", Default = false }):OnChanged(function(v)
+    storeComponent("ColorLandmines", clandmines)
+
+    local hlgenerators = OtherESPSection:AddToggle("HighlightGenerators", { Title = "Highlight Generators", Default = false })
+    hlgenerators:OnChanged(function(v)
         Config.HighlightGenerators = v
         if not v then
             for _, hl in pairs(GeneratorHighlights) do
@@ -2655,7 +2827,9 @@ local function CreateESPTab()
             table.clear(GeneratorHighlights)
         end
     end)
-    OtherESPSection:AddColorpicker("ColorGenerators", {
+    storeComponent("HighlightGenerators", hlgenerators)
+
+    local cgenerators = OtherESPSection:AddColorpicker("ColorGenerators", {
         Title = "Generators Color",
         Default = Config.ColorGenerators,
         Callback = function(v)
@@ -2665,6 +2839,7 @@ local function CreateESPTab()
             end
         end
     })
+    storeComponent("ColorGenerators", cgenerators)
 end
 
 local function CreateGameTab()
@@ -2764,6 +2939,42 @@ local function CreateGameTab()
         end
     })
 
+    local UtilitiesSection = Tabs.Game:AddSection("Utilities")
+    local antiafk = UtilitiesSection:AddToggle("AntiAFKToggle", { Title = "Anti-AFK", Default = false })
+    antiafk:OnChanged(function(v)
+        Config.AntiAFKEnabled = v
+    end)
+    storeComponent("AntiAFKEnabled", antiafk)
+
+    local removeDeathConnection = nil
+    local removedeath = UtilitiesSection:AddToggle("RemoveDeathScreenToggle", {
+        Title = "Auto Remove Death Screen",
+        Default = false,
+        Callback = function(v)
+            Config.RemoveDeathScreen = v
+            if v then
+                local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+                if playerGui then
+                    local death = playerGui:FindFirstChild("Death")
+                    if death then death:Destroy() end
+                    if not removeDeathConnection then
+                        removeDeathConnection = playerGui.ChildAdded:Connect(function(child)
+                            if child.Name == "Death" and Config.RemoveDeathScreen then
+                                child:Destroy()
+                            end
+                        end)
+                    end
+                end
+            else
+                if removeDeathConnection then
+                    removeDeathConnection:Disconnect()
+                    removeDeathConnection = nil
+                end
+            end
+        end
+    })
+    storeComponent("RemoveDeathScreen", removedeath)
+
     local CoreGUISection = Tabs.Game:AddSection("CoreGUI")
     local ChatLoggerEnabled = false
     local function ToggleNativeChat(enable)
@@ -2806,46 +3017,10 @@ local function CreateGameTab()
             Fluent:Notify({ Title = "Chat", Content = "Native chat interface enabled", Duration = 2 })
         end
     end)
-
-    local UtilitiesSection = Tabs.Game:AddSection("Utilities")
-    UtilitiesSection:AddToggle("AntiAFKToggle", { Title = "Anti-AFK", Default = false }):OnChanged(function(v)
-        Config.AntiAFKEnabled = v
-    end)
-    UtilitiesSection:AddToggle("RemoveDeathScreenToggle", {
-        Title = "Auto Remove Death Screen",
-        Default = false,
-        Callback = function(v)
-            Config.RemoveDeathScreen = v
-            if v then
-                local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-                if playerGui then
-                    playerGui.ChildAdded:Connect(function(child)
-                        if child.Name == "Death" and Config.RemoveDeathScreen then
-                            child:Destroy()
-                        end
-                    end)
-                end
-            end
-        end
-    })
-    UtilitiesSection:AddToggle("AlwaysShowHealthToggle", {
-        Title = "Always Show Health",
-        Default = false,
-        Callback = function(v)
-            Config.AlwaysShowHealth = v
-        end
-    })
-    UtilitiesSection:AddToggle("AlwaysShowStaminaToggle", {
-        Title = "Always Show Stamina",
-        Default = false,
-        Callback = function(v)
-            Config.AlwaysShowStamina = v
-        end
-    })
 end
 
 local function CreateAboutTab()
-    local AboutSection = Tabs.About:AddSection("Credits & Links")
+    local AboutSection = Tabs.About:AddSection("Informations & Links")
     AboutSection:AddButton({ Title = "Copy Discord Server Link", Callback = function()
         local link = "https://discord.gg/hEzaXke2x"
         if setclipboard then setclipboard(link)
@@ -2858,7 +3033,8 @@ local function CreateAboutTab()
         else pcall(function() local tb = Instance.new("TextBox"); tb.Text = link; tb:CaptureFocus(); tb:ReleaseFocus(); tb:Destroy() end) end
         Fluent:Notify({ Title = "Rscripts.net", Content = "Rscript Link copied", Duration = 3 })
     end })
-    AboutSection:AddParagraph({ Title = "Credits", Content = "-------------\nv.07.00.10\n-------------\nMain dev : x4tmq\nUnderequipped badge : expresso5184\nTesters : Sinitzyn - Χρήστος - 𝔽𝕝𝕒𝕣𝕖\n-------------\nStatus : Safe - Stable" })
+    AboutSection:AddParagraph({ Title = "Credits", Content = "-------------\nv.08.00.40\n-------------\nMain dev : x4tmq\nUnderequipped badge : expresso5184\nTesters : Sinitzyn - Χρήστος - Flare\n-------------\nStatus : Safe - Stable" })
+    AboutSection:AddParagraph({ Title = "Info", Content = "-------------\nv.08.00.40\n-------------\nIf the script don't work or some stuff bugs :\n- Restart ur exec\n- Restart roblox\n- And re execute this scrpt ! :D" })
 end
 
 local function CreateSettingsTab()
@@ -2870,22 +3046,177 @@ local function CreateSettingsTab()
         Default = "Darker",
     })
     ThemeDropdown:OnChanged(function(Value)
+        Config.Theme = Value
         Fluent:SetTheme(Value)
     end)
+    storeComponent("Theme", ThemeDropdown)
+
+    local SaveSection = Tabs.Settings:AddSection("Save [v1]")
+    local saveNameInput = SaveSection:AddInput("SaveNameInput", {
+        Title = "Config Name",
+        Default = "",
+        Placeholder = "Enter a name",
+        Callback = function(value)
+        end
+    })
+
+    SaveSection:AddButton({
+        Title = "Save Settings",
+        Callback = function()
+            local name = saveNameInput.Value
+            if name == "" then
+                Fluent:Notify({ Title = "Error", Content = "Please enter a name", Duration = 3 })
+                return
+            end
+            local success, err = pcall(function()
+                local configCopy = table.clone(Config)
+                configCopy.Theme = ThemeDropdown.Value
+                local data = HttpService:JSONEncode(configCopy)
+                if not isfolder("sentinel/configs/") then
+                    makefolder("sentinel/configs/")
+                end
+                writefile("sentinel/configs/" .. name .. ".json", data)
+            end)
+            if success then
+                Fluent:Notify({ Title = "Saved", Content = "Settings saved as " .. name, Duration = 3 })
+                local loadDropdown = UIComponents.LoadConfigDropdown
+                if loadDropdown then
+                    local newList = refreshConfigList()
+                    loadDropdown:SetValues(newList)
+                end
+            else
+                Fluent:Notify({ Title = "Error", Content = "Failed to save: " .. err, Duration = 3 })
+            end
+        end
+    })
+
+    local LoadSection = Tabs.Settings:AddSection("Load Settings")
+    local configList = {}
+    local function refreshConfigList()
+        configList = {}
+        if isfolder("sentinel/configs/") then
+            local files = listfiles("sentinel/configs/")
+            for _, file in ipairs(files) do
+                local name = file:match("([^/\\]+)%.json$")
+                if name then
+                    table.insert(configList, name)
+                end
+            end
+        end
+        return configList
+    end
+
+    local loadDropdown = LoadSection:AddDropdown("LoadConfigDropdown", {
+        Title = "Select Config",
+        Values = refreshConfigList(),
+        Default = nil,
+        Callback = function(selected)
+            if selected then
+                local success, err = pcall(function()
+                    local data = readfile("sentinel/configs/" .. selected .. ".json")
+                    local loaded = HttpService:JSONDecode(data)
+                    for k, v in pairs(loaded) do
+                        Config[k] = v
+                    end
+                    applyConfigToUI()
+                    if loaded.Theme then
+                        Fluent:SetTheme(loaded.Theme)
+                    end
+                    Fluent:Notify({ Title = "Loaded", Content = "Config loaded: " .. selected, Duration = 3 })
+                end)
+                if not success then
+                    Fluent:Notify({ Title = "Error", Content = "Failed to load: " .. err, Duration = 3 })
+                end
+            end
+        end
+    })
+    storeComponent("LoadConfigDropdown", loadDropdown)
+
+    LoadSection:AddButton({
+        Title = "Refresh List",
+        Callback = function()
+            local newList = refreshConfigList()
+            loadDropdown:SetValues(newList)
+            Fluent:Notify({ Title = "Refreshed", Content = "Config list updated", Duration = 2 })
+        end
+    })
+
+    local DeleteSection = Tabs.Settings:AddSection("Delete Config")
+    local deleteConfigList = {}
+    local function refreshDeleteConfigList()
+        deleteConfigList = {}
+        if isfolder("sentinel/configs/") then
+            local files = listfiles("sentinel/configs/")
+            for _, file in ipairs(files) do
+                local name = file:match("([^/\\]+)%.json$")
+                if name then
+                    table.insert(deleteConfigList, name)
+                end
+            end
+        end
+        return deleteConfigList
+    end
+
+    local deleteDropdown = DeleteSection:AddDropdown("DeleteConfigDropdown", {
+        Title = "Select Config to Delete",
+        Values = refreshDeleteConfigList(),
+        Default = nil,
+        Callback = function(selected)
+        end
+    })
+
+    DeleteSection:AddButton({
+        Title = "Delete Selected Config",
+        Callback = function()
+            local selected = deleteDropdown.Value
+            if selected == nil or selected == "" then
+                Fluent:Notify({ Title = "Error", Content = "No config selected", Duration = 3 })
+                return
+            end
+            local filePath = "sentinel/configs/" .. selected .. ".json"
+            if isfile(filePath) then
+                delfile(filePath)
+                Fluent:Notify({ Title = "Deleted", Content = "Config deleted: " .. selected, Duration = 3 })
+                local newList = refreshConfigList()
+                loadDropdown:SetValues(newList)
+                loadDropdown:SetValue(nil)
+                local newDeleteList = refreshDeleteConfigList()
+                deleteDropdown:SetValues(newDeleteList)
+                deleteDropdown:SetValue(nil)
+            else
+                Fluent:Notify({ Title = "Error", Content = "Config file not found", Duration = 3 })
+            end
+        end
+    })
+
+    DeleteSection:AddButton({
+        Title = "Refresh Delete List",
+        Callback = function()
+            local newList = refreshDeleteConfigList()
+            deleteDropdown:SetValues(newList)
+            Fluent:Notify({ Title = "Refreshed", Content = "Delete list updated", Duration = 2 })
+        end
+    })
 end
 
 local function CreateDevTab()
-    local OtherScriptsSection = Tabs.Dev:AddSection("Other Scripts")
-    OtherScriptsSection:AddButton({
+    local devSection = Tabs.Dev:AddSection("4 dev")
+    devSection:AddButton({
         Title = "Infinite Yield",
         Callback = function()
             loadstring(game:HttpGet("https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source"))()
         end
     })
-    OtherScriptsSection:AddButton({
+    devSection:AddButton({
         Title = "Dex Explorer V2",
         Callback = function()
             loadstring(game:HttpGet("https://github.com/AZYsGithub/DexPlusPlus/releases/latest/download/out.lua"))()
+        end
+    })
+    devSection:AddButton({
+        Title = "Invisible",
+        Callback = function()
+            loadstring(game:HttpGet('https://pastebin.com/raw/3Rnd9rHf'))()
         end
     })
 end
@@ -2911,10 +3242,10 @@ LocalPlayer.CharacterAdded:Connect(function()
     InfectionActive = false
     infectionIsRunning = false
     canInfect = true
-    if Config.RemoveDeathScreen then
+    if Config.RemoveDeathScreen and not removeDeathConnection then
         local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
         if playerGui then
-            playerGui.ChildAdded:Connect(function(child)
+            removeDeathConnection = playerGui.ChildAdded:Connect(function(child)
                 if child.Name == "Death" and Config.RemoveDeathScreen then
                     child:Destroy()
                 end
@@ -3180,5 +3511,5 @@ RunService.RenderStepped:Connect(function()
 end)
 
 Window:SelectTab(1)
-Fluent:Notify({ Title = "News", Content = "Auto Remove Death screen is currently down ! :(", Duration = 5 })
-Fluent:Notify({ Title = "Sentinel v7.00.10", Content = "Script Loaded. Enjoy :D", Duration = 5 })
+Fluent:Notify({ Title = "News", Content = "v8 Released :D", Duration = 5 })
+Fluent:Notify({ Title = "Sentinel v8.00.40", Content = "Script Loaded. Enjoy :D", Duration = 5 })
