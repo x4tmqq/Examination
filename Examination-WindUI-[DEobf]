@@ -1,0 +1,3249 @@
+local Players = game:GetService("Players")
+local Lighting = game:GetService("Lighting")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+local LocalPlayer = Players.LocalPlayer
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local MarketplaceService = game:GetService("MarketplaceService")
+local Debris = game:GetService("Debris")
+local Camera = workspace.CurrentCamera
+local TextChatService = game:GetService("TextChatService")
+local CoreGui = game:GetService("CoreGui")
+local Teams = game:GetService("Teams")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local StarterGui = game:GetService("StarterGui")
+local HttpService = game:GetService("HttpService")
+
+local function isPlayerCharacter(model)
+    if not model or not model:IsA("Model") then return false end
+    return Players:GetPlayerFromCharacter(model) ~= nil
+end
+
+local function isHumanoidModel(model)
+    if not model or not model:IsA("Model") then return false end
+    return model:FindFirstChildWhichIsA("Humanoid") ~= nil
+end
+
+local function hideLocalHead()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local head = char:FindFirstChild("Head")
+    if head and head:IsA("BasePart") then
+        pcall(function()
+            head.Transparency = 1
+            head.CanCollide = false
+            local hl = head:FindFirstChildWhichIsA("Highlight")
+            if hl then hl:Destroy() end
+        end)
+    end
+end
+
+LocalPlayer.CharacterAdded:Connect(function(char)
+    char:WaitForChild("Head", 5)
+    hideLocalHead()
+end)
+if LocalPlayer.Character then
+    task.wait(0.5)
+    hideLocalHead()
+end
+
+local Config = {
+    SpeedHackEnabled = false,
+    WalkSpeedValue = 16,
+    InfiniteStaminaEnabled = false,
+    JumpPowerEnabled = false,
+    JumpPowerValue = 30,
+    InfiniteJump = false,
+    JumpBypassActive = false,
+    FlyEnabled = false,
+    FlySpeed = 50,
+    FlyType = "CFrame",
+    NoclipEnabled = false,
+    AutoWipeBlood = false,
+    GAttackEnabled = false,
+    BypassCombatCooldowns = false,
+    AutoSpamAttack = false,
+    AntiCamShake = false,
+    ImmuneLookHazard = false,
+    HighlightPlayer = false,
+    HighlightFriends = false,
+    HighlightMobs = false,
+    HealthPlayer = false,
+    HealthFriends = false,
+    HealthMobs = false,
+    TracerPlayer = false,
+    TracerFriends = false,
+    TracerMobs = false,
+    ColorPlayer = Color3.fromRGB(100, 200, 255),
+    ColorFriends = Color3.fromRGB(100, 255, 100),
+    ColorMobs = Color3.fromRGB(255, 100, 100),
+    MaxDistance = 1000,
+    HLFillTrans = 0.7,
+    HLOutlineTrans = 1.0,
+    FullBright = false,
+    Xray = false,
+    XrayDistance = 30,
+    NoFog = false,
+    UnlockThirdPerson = false,
+    FakeDeath = false,
+    FakeInjured = false,
+    InfiniteNightVision = false,
+    SilencerEnabled = false,
+    CharacterName = "",
+    CharacterRank = "",
+    TagColor = Color3.fromRGB(80, 109, 84),
+    Team = "Menlo",
+    StaggerEnabled = true,
+    InfectionActive = false,
+    AnimatorEnabled = false,
+    AnimatorIdleAnimName = nil,
+    AnimatorWalkAnimName = nil,
+    AnimatorRunAnimName = nil,
+    GodmodeEnabled = false,
+    GodmodeHealthThreshold = 10,
+    HighlightLandmines = false,
+    HighlightGenerators = false,
+    ColorLandmines = Color3.fromRGB(255, 255, 0),
+    ColorGenerators = Color3.fromRGB(0, 255, 255),
+    IgnoreLandmine = false,
+    RemoveDeathScreen = false,
+    AntiAFKEnabled = false,
+    ChatLoggerEnabled = false,
+    CustomFOVEnabled = false,
+    FOVValue = 70,
+    Theme = "Darker",
+    XrayMaterial = "ForceField",
+    XrayTransparency = 0.3,
+}
+
+local ValidCombatTools = {
+    ["MPV-9"] = true, ["Mossberg 590A1"] = true, ["Beanbag Shotgun"] = true, ["VGS-9"] = true,
+    ["Lock-17 [F]"] = true, ["MPV-SD"] = true, ["IA AR-56"] = true, ["AR-18 'Standard'"] = true,
+    ["AR-21"] = true, R8 = true, RPK = true, RPD = true, ["P95 'Knight'"] = true,
+    ["A9 Brigadier [F]"] = true, ["SMX-9"] = true, ["PMS-12T 'Hammer' [S]"] = true, ["Lock-17"] = true,
+    ["AR-19"] = true, ["Lock-17 [S]"] = true, ["Lock-18"] = true, ["A9 Brigadier"] = true,
+    ["VGS-45 'Striker'"] = true, ["AR-19 'Phantom''"] = true, ["Arcturus .50"] = true,
+    ["Tursk R-12 'Breakstorm'"] = true, ["MPV-9x19"] = true, ["MPV-9x19 [S]"] = true, ["K7 'Tempest'"] = true,
+    ["AR-19 'Phantom'"] = true, M16A2 = true, ["Glock-18"] = true, ["AKS-74u"] = true,
+    ["SRS-58"] = true, ["F7 Lynx"] = true, ["SHC-23"] = true, ["IB-5 Carcara"] = true,
+    ["AEN-50"] = true, ["VGS-45"] = true, ["PMS-12T 'Hammer'"] = true, ["AK-74M (Bayonet)"] = true,
+    ["Night Stalker"] = true, M249 = true, ["AR-23"] = true, ["AK-74"] = true
+}
+
+local WeaponAnimations = {
+    ["MPV-9"] = "rbxassetid://132986160862388", ["SMX-9"] = "rbxassetid://132986160862388",
+    ["MPV-9x19"] = "rbxassetid://132986160862388", ["MPV-SD"] = "rbxassetid://84050213985015",
+    ["AR-18 'Standard'"] = "rbxassetid://132986160862388", ["VGS-45 'Striker'"] = "rbxassetid://119099679349414",
+    ["P95 'Knight'"] = "rbxassetid://119099679349414", ["AR-19"] = "rbxassetid://132986160862388",
+    M16A2 = "rbxassetid://132986160862388", ["A9 Brigadier"] = "rbxassetid://74792106188393",
+    ["A9 Brigadier [F]"] = "rbxassetid://74792106188393", ["Lock-17"] = "rbxassetid://74792106188393",
+    ["Tursk R-12 'Breakstorm'"] = "rbxassetid://74792106188393", ["Lock-17 [S]"] = "rbxassetid://74792106188393",
+    ["MPV-9x19 [S]"] = "rbxassetid://76929295689492", ["AR-21"] = "rbxassetid://76929295689492",
+    ["IB-5 Carcara"] = "rbxassetid://76929295689492", ["IA AR-56"] = "rbxassetid://116750283539846",
+    ["AEN-50"] = "rbxassetid://76929295689492", RPD = "rbxassetid://76929295689492",
+    RPK = "rbxassetid://76929295689492", ["AK-74"] = "rbxassetid://76929295689492",
+    ["Arcturus .50"] = "rbxassetid://74792106188393", ["F7 Lynx"] = "rbxassetid://74792106188393",
+    ["Glock-19 [S]"] = "rbxassetid://74792106188393", ["Glock-18"] = "rbxassetid://74792106188393",
+    ["AR-19 'Phantom'"] = "rbxassetid://70983687392228", ["AK-74M (Bayonet)"] = "rbxassetid://116750283539846",
+    ["Night Stalker"] = "rbxassetid://114744562625259", ["PMS-12T 'Hammer'"] = "rbxassetid://119099679349414",
+    ["SRS-58"] = "rbxassetid://119099679349414", ["SHC-23"] = "rbxassetid://97981174560418",
+    Default = "rbxassetid://74792106188393"
+}
+
+local HitboxEnabled = false
+local HitboxModifiedHeads = {}
+local flyBV, flyBG, flySeat, flyWeld, flyActive = nil, nil, nil, nil, false
+local CurrentFlyType = "CFrame"
+local FlySpeed = 50
+local savedHipHeight = 2
+local CurrentAnimTrack = nil
+local LastAttackTick = 0
+local LastSpecialAttackTick = 0
+local IsSpecialAttackActive = false
+local CooldownCounter = 0
+local CooldownData = { Bash = nil, Kick = nil }
+local ActiveTweens = {}
+local CachedMobs = {}
+local tracerCache = {}
+local OrigAmbient = Lighting.Ambient
+local OrigOutdoorAmbient = Lighting.OutdoorAmbient
+local OrigBrightness = Lighting.Brightness
+local OrigFogEnd = Lighting.FogEnd
+local OrigFogStart = Lighting.FogStart
+local OrigFOV = Camera.FieldOfView
+
+local FakeDeathAnimTrack = nil
+local FakeInjuredTrack = nil
+
+local InfiniteNVConnection = nil
+local NVForcerConnection = nil
+
+local isShiftHeld = false
+
+local AutoShieldRemovalActive = false
+local AutoShieldRemovalConnection = nil
+
+local NeckSnapEvent = ReplicatedStorage:WaitForChild("NeckSnapEvent")
+local BashCooldownUI = ReplicatedStorage:WaitForChild("BashCooldownUI")
+local PunchEvent = ReplicatedStorage:FindFirstChild("PunchEvent")
+
+local gameAee = Lighting:FindFirstChild("aee")
+local gameRadiationTint = Lighting:FindFirstChild("RadiationTint")
+
+local GodmodePreviousPosition = nil
+local GodmodeTeleported = false
+
+local LandmineHighlights = {}
+local GeneratorHighlights = {}
+
+local IgnoreLandmineConnection = nil
+local landmineHitEvent = ReplicatedStorage:FindFirstChild("landmineHit")
+local originalLandmineFire = nil
+
+local InfectionActive = false
+local InfectionCleanupFunctions = {}
+local InfectionMode = "Controllable"
+local canInfect = true
+
+local INFECTION_ANIM_INJURED = "rbxassetid://94302036679429"
+local INFECTION_ANIM_HEAD_SHAKE = "rbxassetid://118621065272904"
+local INFECTION_ANIM_COUGH = "rbxassetid://111615919261340"
+local INFECTION_ANIM_UNSTABLE = "rbxassetid://9146103628"
+local INFECTION_ANIM_FALL1 = "rbxassetid://99985127815659"
+local INFECTION_ANIM_LURKER_AWAKE = "rbxassetid://138937044212276"
+local INFECTION_ANIM_IDLE = "rbxassetid://95464797704887"
+local INFECTION_ANIM_WALK = "rbxassetid://87989829896123"
+local INFECTION_ANIM_RUN = "rbxassetid://111821553591135"
+
+local infectionInjuredTrack = nil
+local infectionHeadShakeTrack = nil
+local infectionCoughTrack = nil
+local infectionUnstableTrack = nil
+local infectionFallTrack = nil
+local infectionLurkerTrack = nil
+local infectionIdleTrack = nil
+local infectionWalkTrack = nil
+local infectionRunTrack = nil
+local infectionCurrentState = nil
+local infectionTransformDone = false
+local infectionIsRunning = false
+
+local function BreakGasmask()
+    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+    if not playerGui then return false end
+    local gasmaskGui = playerGui:FindFirstChild("Gasmask")
+    if not gasmaskGui then return false end
+    local maskHole = gasmaskGui:FindFirstChild("MaskHole")
+    local glass = gasmaskGui:FindFirstChild("Glass")
+    if maskHole then
+        if maskHole:IsA("ImageLabel") then
+            maskHole.ImageTransparency = 0
+            maskHole.Visible = true
+        elseif maskHole:IsA("Frame") then
+            maskHole.Visible = true
+            for _, child in pairs(maskHole:GetDescendants()) do
+                if child:IsA("ImageLabel") then
+                    child.ImageTransparency = 0
+                    child.Visible = true
+                end
+            end
+        end
+    end
+    local crackSound = Instance.new("Sound")
+    crackSound.SoundId = "rbxassetid://632831227"
+    crackSound.Volume = 1
+    crackSound.Parent = gasmaskGui
+    crackSound:Play()
+    Debris:AddItem(crackSound, 3)
+    if glass and glass:IsA("ImageLabel") then
+        local originalTransparency = glass.ImageTransparency
+        TweenService:Create(glass, TweenInfo.new(0.1), { ImageTransparency = 0.5 }):Play()
+        task.wait(0.05)
+        TweenService:Create(glass, TweenInfo.new(0.5), { ImageTransparency = originalTransparency }):Play()
+    end
+    return true
+end
+
+local function showBloodVignette(show)
+    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+    if not playerGui then return end
+    local gui = playerGui:FindFirstChild("Gui")
+    if not gui then return end
+    local blood = gui:FindFirstChild("blood-vignette")
+    if blood and blood:IsA("ImageLabel") then
+        blood.Visible = show
+        if show then
+            blood.ImageTransparency = 0
+        else
+            blood.ImageTransparency = 1
+        end
+    end
+end
+
+local function createRedTint()
+    local cc = Lighting:FindFirstChild("InfectionRedTint")
+    if not cc then
+        cc = Instance.new("ColorCorrectionEffect")
+        cc.Name = "InfectionRedTint"
+        cc.Parent = Lighting
+    end
+    return cc
+end
+
+local function playAnimationOnHumanoid(animId, looped, callback)
+    local char = LocalPlayer.Character
+    if not char then return nil end
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return nil end
+    local animator = humanoid:FindFirstChildOfClass("Animator") or Instance.new("Animator", humanoid)
+    local anim = Instance.new("Animation")
+    anim.AnimationId = animId
+    local track = animator:LoadAnimation(anim)
+    track.Looped = looped or false
+    track:Play()
+    if callback then
+        track.Stopped:Connect(callback)
+    end
+    return track
+end
+
+local demonicChars = {
+    "\206\169", "\208\150", "\206\168", "\226\137\160", "\206\163", "\194\181",
+    "\226\136\130", "\195\184", "\207\128", "\194\167", "\210\130", "\207\158",
+    "\210\150", "\210\168", "?", "!"
+}
+
+local function spawnDemonicSymbol(mass)
+    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+    if not playerGui then return end
+    local infectionEffectsGui = playerGui:FindFirstChild("InfectionEffectsGui")
+    if not infectionEffectsGui then
+        infectionEffectsGui = Instance.new("ScreenGui")
+        infectionEffectsGui.Name = "InfectionEffectsGui"
+        infectionEffectsGui.ResetOnSpawn = false
+        infectionEffectsGui.IgnoreGuiInset = true
+        infectionEffectsGui.Parent = playerGui
+    end
+
+    local count = mass and 5 or 3
+    for _ = 1, count do
+        local label = Instance.new("TextLabel")
+        label.Text = demonicChars[math.random(1, #demonicChars)]
+        label.TextColor3 = Color3.fromRGB(255, 100, 100)
+        label.Font = Enum.Font.Code
+        label.TextSize = math.random(70, 80)
+        label.BackgroundTransparency = 1
+        label.Size = UDim2.new(0, 60, 0, 60)
+        label.Position = UDim2.new(math.random(), 0, 1, 0)
+        label.AnchorPoint = Vector2.new(0.5, 1)
+        label.Parent = infectionEffectsGui
+
+        local endY = 0.1 + math.random() * 0.1
+        local tween = TweenService:Create(label, TweenInfo.new(2.5, Enum.EasingStyle.Linear, Enum.EasingDirection.Out), {
+            TextTransparency = 1,
+            Position = UDim2.new(label.Position.X.Scale, 0, endY, 0)
+        })
+        tween:Play()
+        tween.Completed:Connect(function()
+            label:Destroy()
+        end)
+    end
+end
+
+local function stopInfection()
+    InfectionActive = false
+    infectionIsRunning = false
+    showBloodVignette(false)
+    local cc = Lighting:FindFirstChild("InfectionRedTint")
+    if cc then cc:Destroy() end
+    local effectsGui = LocalPlayer.PlayerGui:FindFirstChild("InfectionEffectsGui")
+    if effectsGui then effectsGui:Destroy() end
+    if InfectionCleanupFunctions then
+        for _, func in ipairs(InfectionCleanupFunctions) do
+            pcall(func)
+        end
+        InfectionCleanupFunctions = {}
+    end
+    local tracks = {infectionInjuredTrack, infectionHeadShakeTrack, infectionCoughTrack, infectionUnstableTrack,
+                    infectionFallTrack, infectionLurkerTrack, infectionIdleTrack, infectionWalkTrack, infectionRunTrack}
+    for _, t in ipairs(tracks) do
+        if t then t:Stop(); t = nil end
+    end
+    infectionTransformDone = false
+    infectionCurrentState = nil
+    local char = LocalPlayer.Character
+    if char then
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            hum.PlatformStand = false
+            hum.WalkSpeed = Config.SpeedHackEnabled and Config.WalkSpeedValue or 9
+            hum.JumpPower = Config.JumpPowerEnabled and Config.JumpPowerValue or 50
+            local animator = hum:FindFirstChildOfClass("Animator")
+            if animator then
+                for _, track in pairs(animator:GetPlayingAnimationTracks()) do
+                    track:Stop()
+                end
+            end
+        end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            hrp.Anchored = false
+        end
+        local clientScripts = char:FindFirstChild("ClientScripts")
+        if clientScripts then
+            local stagger = clientScripts:FindFirstChild("Stagger")
+            if stagger then stagger.Disabled = not Config.StaggerEnabled end
+        end
+    end
+end
+
+local function startInfectionSequence(infectionType)
+    if not canInfect then
+        pcall(function()
+            if WindUI then WindUI:Notify({ Title = "Infection", Content = "You must respawn before starting a new infection.", Duration = 3 }) end
+        end)
+        return
+    end
+    if InfectionActive then return end
+    if infectionType ~= "Controllable" and infectionType ~= "NonControllable" then
+        infectionType = "Controllable"
+    end
+    canInfect = false
+    InfectionActive = true
+    infectionIsRunning = true
+    InfectionMode = infectionType
+
+    BreakGasmask()
+    showBloodVignette(true)
+
+    local char = LocalPlayer.Character
+    if not char then InfectionActive = false; infectionIsRunning = false; canInfect = true; return end
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not humanoid then InfectionActive = false; infectionIsRunning = false; canInfect = true; return end
+
+    humanoid.Health = 1
+
+    infectionInjuredTrack = playAnimationOnHumanoid(INFECTION_ANIM_INJURED, true)
+    infectionHeadShakeTrack = playAnimationOnHumanoid(INFECTION_ANIM_HEAD_SHAKE, true)
+
+    local redTint = createRedTint()
+    redTint.TintColor = Color3.fromRGB(255, 255, 255)
+
+    local startTime = tick()
+    local coughTimer = tick()
+    local redStart = 40
+    local demonStart = 45
+    local transformTime = 60
+
+    local function grand2Loop()
+        while infectionIsRunning and humanoid and humanoid.Health > 0 do
+            local elapsed = tick() - startTime
+
+            if tick() - coughTimer >= 10 and elapsed < transformTime then
+                coughTimer = tick()
+                if infectionCoughTrack then infectionCoughTrack:Stop() end
+                infectionCoughTrack = playAnimationOnHumanoid(INFECTION_ANIM_COUGH, false)
+                local sound = Instance.new("Sound")
+                sound.SoundId = "rbxassetid://93090593281658"
+                sound.Volume = 1
+                sound.Parent = char
+                sound:Play()
+                Debris:AddItem(sound, 2)
+            end
+
+            if not infectionUnstableTrack or not infectionUnstableTrack.IsPlaying then
+                if infectionUnstableTrack then infectionUnstableTrack:Stop() end
+                infectionUnstableTrack = playAnimationOnHumanoid(INFECTION_ANIM_UNSTABLE, true)
+            end
+
+            if elapsed >= redStart then
+                local progress = math.min((elapsed - redStart) / 30, 1)
+                redTint.TintColor = Color3.fromRGB(255, 255 - math.floor(progress * 255), 255 - math.floor(progress * 255))
+            end
+
+            if elapsed >= demonStart then
+                spawnDemonicSymbol(true)
+            end
+
+            if elapsed >= transformTime then
+                break
+            end
+
+            task.wait(0.5)
+        end
+    end
+
+    task.spawn(grand2Loop)
+
+    task.wait(transformTime)
+
+    if not infectionIsRunning or not humanoid or humanoid.Health <= 0 then
+        stopInfection()
+        canInfect = true
+        return
+    end
+
+    if infectionCoughTrack then infectionCoughTrack:Stop(); infectionCoughTrack = nil end
+    if infectionUnstableTrack then infectionUnstableTrack:Stop(); infectionUnstableTrack = nil end
+    if infectionInjuredTrack then infectionInjuredTrack:Stop(); infectionInjuredTrack = nil end
+    if infectionHeadShakeTrack then infectionHeadShakeTrack:Stop(); infectionHeadShakeTrack = nil end
+
+    if InfectionMode == "Controllable" then
+        infectionFallTrack = playAnimationOnHumanoid(INFECTION_ANIM_FALL1, false, function()
+            if infectionIsRunning then
+                if infectionLurkerTrack then infectionLurkerTrack:Stop() end
+                infectionLurkerTrack = playAnimationOnHumanoid(INFECTION_ANIM_LURKER_AWAKE, false, function()
+                    local hrp = char:FindFirstChild("HumanoidRootPart")
+                    if hrp then hrp.Anchored = false end
+                    humanoid.PlatformStand = false
+                    humanoid.WalkSpeed = 9
+                    humanoid.JumpPower = 50
+                    infectionTransformDone = true
+                    infectionCurrentState = nil
+
+                    local function stateMachine()
+                        while infectionIsRunning and humanoid and humanoid.Health > 0 do
+                            local hrp = char:FindFirstChild("HumanoidRootPart")
+                            if hrp then
+                                local velocity = hrp.Velocity
+                                local horizontalVel = Vector3.new(velocity.X, 0, velocity.Z)
+                                local speed = horizontalVel.Magnitude
+                                local newState
+                                if isShiftHeld and speed > 2 then
+                                    newState = "run"
+                                elseif speed > 0.5 then
+                                    newState = "walk"
+                                else
+                                    newState = "idle"
+                                end
+                                if newState ~= infectionCurrentState then
+                                    infectionCurrentState = newState
+                                    if infectionIdleTrack then infectionIdleTrack:Stop(); infectionIdleTrack = nil end
+                                    if infectionWalkTrack then infectionWalkTrack:Stop(); infectionWalkTrack = nil end
+                                    if infectionRunTrack then infectionRunTrack:Stop(); infectionRunTrack = nil end
+                                    if newState == "idle" then
+                                        infectionIdleTrack = playAnimationOnHumanoid(INFECTION_ANIM_IDLE, true)
+                                    elseif newState == "walk" then
+                                        infectionWalkTrack = playAnimationOnHumanoid(INFECTION_ANIM_WALK, true)
+                                    elseif newState == "run" then
+                                        infectionRunTrack = playAnimationOnHumanoid(INFECTION_ANIM_RUN, true)
+                                    end
+                                end
+                            end
+                            task.wait(0.2)
+                        end
+                    end
+                    task.spawn(stateMachine)
+
+                    task.wait(60)
+                    if infectionIsRunning and humanoid and humanoid.Health > 0 then
+                        humanoid.Health = 0
+                    end
+                    stopInfection()
+                    canInfect = true
+                end)
+            end
+        end)
+    else
+        local suicideAnimId = "rbxassetid://82480275101558"
+        local animator = humanoid:FindFirstChildOfClass("Animator") or Instance.new("Animator", humanoid)
+        local anim = Instance.new("Animation")
+        anim.AnimationId = suicideAnimId
+        local track = animator:LoadAnimation(anim)
+        track:Play()
+        track.Stopped:Wait()
+        humanoid.Health = 0
+        canInfect = true
+    end
+
+    humanoid.Died:Connect(function()
+        if InfectionActive then
+            local suicideAnimId = "rbxassetid://82480275101558"
+            local animator = humanoid:FindFirstChildOfClass("Animator") or Instance.new("Animator", humanoid)
+            local anim = Instance.new("Animation")
+            anim.AnimationId = suicideAnimId
+            local track = animator:LoadAnimation(anim)
+            track:Play()
+            track.Stopped:Wait()
+        end
+        stopInfection()
+        canInfect = true
+    end)
+
+    table.insert(InfectionCleanupFunctions, function()
+        infectionIsRunning = false
+        InfectionActive = false
+        canInfect = true
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if hrp then hrp.Anchored = false end
+        if humanoid then
+            humanoid.PlatformStand = false
+            humanoid.WalkSpeed = Config.SpeedHackEnabled and Config.WalkSpeedValue or 9
+            humanoid.JumpPower = Config.JumpPowerEnabled and Config.JumpPowerValue or 50
+        end
+        local tracks = {infectionInjuredTrack, infectionHeadShakeTrack, infectionCoughTrack, infectionUnstableTrack,
+                        infectionFallTrack, infectionLurkerTrack, infectionIdleTrack, infectionWalkTrack, infectionRunTrack}
+        for _, t in ipairs(tracks) do
+            if t then t:Stop(); t = nil end
+        end
+        infectionTransformDone = false
+        showBloodVignette(false)
+        local cc = Lighting:FindFirstChild("InfectionRedTint")
+        if cc then cc:Destroy() end
+        local effectsGui = LocalPlayer.PlayerGui:FindFirstChild("InfectionEffectsGui")
+        if effectsGui then effectsGui:Destroy() end
+    end)
+end
+
+local function ApplyHitboxToHead(part, enable)
+    if not part or not part:IsA("BasePart") then return end
+    if part.Name ~= "Head" then return end
+    local model = part.Parent
+    if not isHumanoidModel(model) or isPlayerCharacter(model) then return end
+    if model == LocalPlayer.Character then return end
+    pcall(function()
+        if enable then
+            if not HitboxModifiedHeads[part] then
+                HitboxModifiedHeads[part] = {
+                    Size = part.Size,
+                    Transparency = part.Transparency,
+                    CanCollide = part.CanCollide
+                }
+            end
+            part.Size = Vector3.new(4, 4, 4)
+            part.CanCollide = false
+            part.Transparency = 0.5
+        else
+            local original = HitboxModifiedHeads[part]
+            if original then
+                part.Size = original.Size
+                part.CanCollide = original.CanCollide
+                part.Transparency = original.Transparency
+                HitboxModifiedHeads[part] = nil
+            end
+        end
+    end)
+end
+
+local function UpdateAllHitboxes(enable)
+    for _, part in ipairs(Workspace:GetDescendants()) do
+        if part:IsA("BasePart") and part.Name == "Head" then
+            local model = part.Parent
+            if isHumanoidModel(model) and not isPlayerCharacter(model) then
+                ApplyHitboxToHead(part, enable)
+            end
+        end
+    end
+end
+
+Workspace.DescendantAdded:Connect(function(desc)
+    if HitboxEnabled and desc:IsA("BasePart") and desc.Name == "Head" then
+        local model = desc.Parent
+        if isHumanoidModel(model) and not isPlayerCharacter(model) and model ~= LocalPlayer.Character then
+            ApplyHitboxToHead(desc, true)
+        end
+    end
+    if desc:IsA("BasePart") then
+        desc:GetPropertyChangedSignal("Name"):Connect(function()
+            if HitboxEnabled and desc.Name == "Head" then
+                local model = desc.Parent
+                if isHumanoidModel(model) and not isPlayerCharacter(model) and model ~= LocalPlayer.Character then
+                    ApplyHitboxToHead(desc, true)
+                end
+            end
+        end)
+    end
+end)
+
+local function cleanFly()
+    if flyBV then flyBV:Destroy(); flyBV = nil end
+    if flyBG then flyBG:Destroy(); flyBG = nil end
+    if flyWeld then flyWeld:Destroy(); flyWeld = nil end
+    if flySeat then flySeat:Destroy(); flySeat = nil end
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        hum.PlatformStand = false
+        hum:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
+        if hum.SeatPart then hum.Sit(false) end
+    end
+    flyActive = false
+end
+
+local function enableFly(enable)
+    if not enable then
+        cleanFly()
+        return
+    end
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hrp or not hum then return end
+
+    cleanFly()
+    flyActive = true
+
+    if CurrentFlyType == "CFrame" then
+        hum.PlatformStand = true
+        flyBV = Instance.new("BodyVelocity")
+        flyBV.MaxForce = Vector3.new(0, 1e6, 0)
+        flyBV.Velocity = Vector3.new(0, 0, 0)
+        flyBV.Parent = hrp
+    elseif CurrentFlyType == "BodyVelocity [BEST]" then
+        flyBV = Instance.new("BodyVelocity")
+        flyBV.MaxForce = Vector3.new(1e6, 1e6, 1e6)
+        flyBV.Parent = hrp
+        flyBG = Instance.new("BodyGyro")
+        flyBG.MaxTorque = Vector3.new(1e6, 1e6, 1e6)
+        flyBG.Parent = hrp
+    elseif CurrentFlyType == "Seat [UNDETECTED]" then
+        flySeat = Instance.new("VehicleSeat")
+        flySeat.Size = Vector3.new(1, 1, 1)
+        flySeat.Transparency = 1
+        flySeat.CanCollide = false
+        flySeat.Parent = workspace
+        flyWeld = Instance.new("Weld")
+        flyWeld.Part0 = hrp
+        flyWeld.Part1 = flySeat
+        flyWeld.C0 = CFrame.new(0, -1.5, 0)
+        flyWeld.Parent = flySeat
+        hum.Sit = true
+        hum.PlatformStand = true
+        hum:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
+        flyBV = Instance.new("BodyVelocity")
+        flyBV.MaxForce = Vector3.new(1e6, 1e6, 1e6)
+        flyBV.Parent = flySeat
+        flyBG = Instance.new("BodyGyro")
+        flyBG.MaxTorque = Vector3.new(1e6, 1e6, 1e6)
+        flyBG.Parent = flySeat
+    end
+end
+
+RunService.Heartbeat:Connect(function(dt)
+    if not flyActive then return end
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hrp or not hum then return end
+
+    local move = Vector3.new()
+    if UserInputService:IsKeyDown(Enum.KeyCode.W) then move = move + Camera.CFrame.LookVector end
+    if UserInputService:IsKeyDown(Enum.KeyCode.S) then move = move - Camera.CFrame.LookVector end
+    if UserInputService:IsKeyDown(Enum.KeyCode.A) then move = move - Camera.CFrame.RightVector end
+    if UserInputService:IsKeyDown(Enum.KeyCode.D) then move = move + Camera.CFrame.RightVector end
+    if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move = move + Vector3.new(0, 1, 0) end
+    if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then move = move - Vector3.new(0, 1, 0) end
+
+    if move.Magnitude > 0 then move = move.Unit end
+    local speed = FlySpeed * dt
+
+    if CurrentFlyType == "CFrame" then
+        hrp.CFrame = hrp.CFrame + move * speed
+        if hrp.Position.Y < -500 then
+            hrp.CFrame = CFrame.new(hrp.Position.X, 0, hrp.Position.Z)
+        end
+    elseif CurrentFlyType == "BodyVelocity [BEST]" and flyBV and flyBG then
+        flyBG.CFrame = Camera.CFrame
+        flyBV.Velocity = move * FlySpeed
+    elseif CurrentFlyType == "Seat [UNDETECTED]" and flyBV and flyBG and flySeat then
+        flyBG.CFrame = Camera.CFrame
+        flyBV.Velocity = move * FlySpeed
+    end
+end)
+
+local XrayEnabled = false
+local XrayDistance = 30
+local XrayMaterial = Enum.Material.ForceField
+local XrayTransparency = 0.3
+local XrayModifiedParts = {}
+local XrayLoop = nil
+
+local function applyXrayToPart(part, enable)
+    if not part:IsA("BasePart") then return end
+    if enable then
+        if not XrayModifiedParts[part] then
+            XrayModifiedParts[part] = {
+                Material = part.Material,
+                Transparency = part.Transparency
+            }
+            part.Material = XrayMaterial
+            part.Transparency = XrayTransparency
+        else
+            part.Material = XrayMaterial
+            part.Transparency = XrayTransparency
+        end
+    else
+        local data = XrayModifiedParts[part]
+        if data then
+            part.Material = data.Material
+            part.Transparency = data.Transparency
+            XrayModifiedParts[part] = nil
+        end
+    end
+end
+
+local function updateXrayMaterialAndTransparency()
+    if not XrayEnabled then return end
+    for part, data in pairs(XrayModifiedParts) do
+        if part and part:IsA("BasePart") then
+            pcall(function()
+                part.Material = XrayMaterial
+                part.Transparency = XrayTransparency
+            end)
+        end
+    end
+end
+
+local function updateXray()
+    if not XrayEnabled then
+        if XrayLoop then XrayLoop:Disconnect(); XrayLoop = nil end
+        for part, _ in pairs(XrayModifiedParts) do
+            pcall(function() applyXrayToPart(part, false) end)
+        end
+        table.clear(XrayModifiedParts)
+        return
+    end
+
+    if XrayLoop then XrayLoop:Disconnect() end
+    XrayLoop = RunService.Heartbeat:Connect(function()
+        if not XrayEnabled then return end
+        local char = LocalPlayer.Character
+        if not char then return end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+
+        local radius = XrayDistance
+        local nearbyParts = Workspace:GetPartBoundsInRadius(hrp.Position, radius)
+        local currentSet = {}
+        for _, part in ipairs(nearbyParts) do
+            if part:IsA("BasePart") and not part:IsDescendantOf(char) then
+                currentSet[part] = true
+                if not XrayModifiedParts[part] then
+                    applyXrayToPart(part, true)
+                else
+                    if part.Material ~= XrayMaterial or part.Transparency ~= XrayTransparency then
+                        part.Material = XrayMaterial
+                        part.Transparency = XrayTransparency
+                    end
+                end
+            end
+        end
+        for part in pairs(XrayModifiedParts) do
+            if not currentSet[part] then
+                applyXrayToPart(part, false)
+            end
+        end
+    end)
+end
+
+local function updateSilencers(state)
+    local backpack = LocalPlayer:FindFirstChild("Backpack")
+    if backpack then
+        for _, item in ipairs(backpack:GetChildren()) do
+            if item:GetAttribute("IsGun") == true then
+                item:SetAttribute("Silencer", state)
+            end
+        end
+    end
+    local char = LocalPlayer.Character
+    if char then
+        for _, item in ipairs(char:GetChildren()) do
+            if item:IsA("Tool") and item:GetAttribute("IsGun") == true then
+                item:SetAttribute("Silencer", state)
+            end
+        end
+    end
+end
+
+local function checkAndApplySilencer(item)
+    if item:GetAttribute("IsGun") == true then
+        local isEnabled = Config.SilencerEnabled
+        item:SetAttribute("Silencer", isEnabled)
+    end
+end
+
+local function listenToBackpack(currentBackpack)
+    if not currentBackpack then return end
+    currentBackpack.ChildAdded:Connect(function(item)
+        task.wait(0.1)
+        checkAndApplySilencer(item)
+    end)
+end
+
+if LocalPlayer.Character then
+    LocalPlayer.Character.ChildAdded:Connect(function(item)
+        if item:IsA("Tool") then
+            task.wait(0.1)
+            checkAndApplySilencer(item)
+            updateSilencers(Config.SilencerEnabled)
+        end
+    end)
+end
+
+LocalPlayer.CharacterAdded:Connect(function(char)
+    task.wait(1)
+    local backpack = LocalPlayer:WaitForChild("Backpack")
+    listenToBackpack(backpack)
+    char.ChildAdded:Connect(function(item)
+        if item:IsA("Tool") then
+            task.wait(0.1)
+            checkAndApplySilencer(item)
+            updateSilencers(Config.SilencerEnabled)
+        end
+    end)
+    updateSilencers(Config.SilencerEnabled)
+end)
+
+task.spawn(function()
+    local backpack = LocalPlayer:FindFirstChild("Backpack")
+    if backpack then listenToBackpack(backpack) end
+end)
+
+local function applyNametags(char)
+    local head = char and char:FindFirstChild("Head")
+    if not head then return end
+    local tag = head:FindFirstChild("NameTag")
+    if not tag then
+        tag = head:WaitForChild("NameTag", 5)
+        if not tag then return end
+    end
+    tag.CharacterName.TextColor3 = Config.TagColor
+    tag.Rank.TextColor3 = Config.TagColor
+    tag.Username.TextColor3 = Config.TagColor
+    if Config.CharacterName ~= "" then
+        tag.CharacterName.Text = "[" .. Config.CharacterName .. "]"
+    else
+        tag.CharacterName.Text = ""
+    end
+    if Config.CharacterRank ~= "" then
+        tag.Rank.Text = "[" .. Config.CharacterRank .. "]"
+    else
+        tag.Rank.Text = ""
+    end
+end
+
+local function changeTeam(teamName)
+    local team = Teams:FindFirstChild(teamName)
+    if team then
+        LocalPlayer.Team = team
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChildOfClass("Humanoid") then
+            char:FindFirstChildOfClass("Humanoid").Health = 0
+        end
+    end
+end
+
+LocalPlayer.CharacterAdded:Connect(function(char)
+    task.spawn(function()
+        applyNametags(char)
+    end)
+    task.wait(1)
+    local clientScripts = char:FindFirstChild("ClientScripts")
+    if clientScripts then
+        local stagger = clientScripts:FindFirstChild("Stagger")
+        if stagger then
+            stagger.Disabled = not Config.StaggerEnabled
+        end
+    end
+    canInfect = true
+end)
+
+if LocalPlayer.Character then
+    applyNametags(LocalPlayer.Character)
+    local clientScripts = LocalPlayer.Character:FindFirstChild("ClientScripts")
+    if clientScripts then
+        local stagger = clientScripts:FindFirstChild("Stagger")
+        if stagger then
+            stagger.Disabled = not Config.StaggerEnabled
+        end
+    end
+end
+
+local function toggleFakeInjured()
+    if Config.FakeInjured then
+        local char = LocalPlayer.Character
+        if not char then return end
+        local humanoid = char:FindFirstChildOfClass("Humanoid")
+        if not humanoid then return end
+        if not FakeInjuredTrack then
+            local animator = humanoid:FindFirstChildOfClass("Animator") or Instance.new("Animator", humanoid)
+            local animation = Instance.new("Animation")
+            animation.AnimationId = "rbxassetid://94302036679429"
+            FakeInjuredTrack = animator:LoadAnimation(animation)
+            FakeInjuredTrack.Looped = true
+        end
+    else
+        if FakeInjuredTrack then
+            FakeInjuredTrack:Stop()
+            FakeInjuredTrack = nil
+        end
+    end
+end
+
+RunService.Heartbeat:Connect(function()
+    if not Config.FakeInjured then
+        if FakeInjuredTrack and FakeInjuredTrack.IsPlaying then
+            FakeInjuredTrack:Stop()
+        end
+        return
+    end
+    local char = LocalPlayer.Character
+    if not char then return end
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not humanoid or humanoid.Health <= 0 then
+        if FakeInjuredTrack and FakeInjuredTrack.IsPlaying then
+            FakeInjuredTrack:Stop()
+        end
+        return
+    end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then
+        if FakeInjuredTrack and FakeInjuredTrack.IsPlaying then
+            FakeInjuredTrack:Stop()
+        end
+        return
+    end
+    local velocity = hrp.Velocity
+    local horizontalVelocity = Vector3.new(velocity.X, 0, velocity.Z)
+    local isIdle = horizontalVelocity.Magnitude < 0.5 and humanoid:GetState() ~= Enum.HumanoidStateType.Jumping and humanoid:GetState() ~= Enum.HumanoidStateType.Freefall
+    
+    if isIdle then
+        if FakeInjuredTrack and not FakeInjuredTrack.IsPlaying then
+            FakeInjuredTrack:Play()
+        end
+    else
+        if FakeInjuredTrack and FakeInjuredTrack.IsPlaying then
+            FakeInjuredTrack:Stop()
+        end
+    end
+end)
+
+local fakeDeathBV = nil
+local fakeDeathBP = nil
+
+local function toggleFakeDeath()
+    local character = LocalPlayer.Character
+    if not character then return end
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+    if Config.FakeDeath then
+        if fakeDeathBV then fakeDeathBV:Destroy(); fakeDeathBV = nil end
+        if fakeDeathBP then fakeDeathBP:Destroy(); fakeDeathBP = nil end
+
+        local animator = humanoid:FindFirstChildOfClass("Animator") or Instance.new("Animator", humanoid)
+        local animation = Instance.new("Animation")
+        animation.AnimationId = "rbxassetid://114023816208972"
+        FakeDeathAnimTrack = animator:LoadAnimation(animation)
+        FakeDeathAnimTrack.Looped = true
+        FakeDeathAnimTrack:Play()
+        humanoid.PlatformStand = true
+        humanoid.WalkSpeed = 0
+        humanoid.JumpPower = 0
+
+        local hrp = character:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            fakeDeathBV = Instance.new("BodyVelocity")
+            fakeDeathBV.MaxForce = Vector3.new(1e6, 1e6, 1e6)
+            fakeDeathBV.Velocity = Vector3.new(0, 0, 0)
+            fakeDeathBV.Parent = hrp
+
+            fakeDeathBP = Instance.new("BodyPosition")
+            fakeDeathBP.MaxForce = Vector3.new(1e6, 1e6, 1e6)
+            fakeDeathBP.Position = hrp.Position + Vector3.new(0, 1, 0)
+            fakeDeathBP.Parent = hrp
+        end
+    else
+        if FakeDeathAnimTrack then FakeDeathAnimTrack:Stop(); FakeDeathAnimTrack = nil end
+        humanoid.PlatformStand = false
+        humanoid.WalkSpeed = 9
+        humanoid.JumpPower = 50
+        if fakeDeathBV then fakeDeathBV:Destroy(); fakeDeathBV = nil end
+        if fakeDeathBP then fakeDeathBP:Destroy(); fakeDeathBP = nil end
+    end
+end
+
+local function suicideWithAnimation()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+    local animator = humanoid:FindFirstChildOfClass("Animator") or Instance.new("Animator", humanoid)
+    local anim = Instance.new("Animation")
+    anim.AnimationId = "rbxassetid://82480275101558"
+    local track = animator:LoadAnimation(anim)
+    track:Play()
+    track.Stopped:Wait()
+    humanoid.Health = 0
+end
+
+local function removeElephantFoot()
+    local target = workspace:FindFirstChild("LookAtMe")
+    if target then
+        target:Destroy()
+        pcall(function() if WindUI then WindUI:Notify({ Title = "Success", Content = "Elephant foot removed", Duration = 3 }) end end)
+    else
+        pcall(function() if WindUI then WindUI:Notify({ Title = "Failed", Content = "Elephant foot already removed", Duration = 3 }) end end)
+    end
+end
+
+local function removeArabicDud()
+    local arabic = workspace:FindFirstChild("Arabic")
+    if arabic then
+        arabic:Destroy()
+        pcall(function() if WindUI then WindUI:Notify({ Title = "Success", Content = "Arabic dud removed", Duration = 3 }) end end)
+    else
+        pcall(function() if WindUI then WindUI:Notify({ Title = "Failed", Content = "Arabic dud not found", Duration = 3 }) end end)
+    end
+end
+
+local function removeLobbyMusic()
+    local found = 0
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj.Name == "Radio" then
+            obj:Destroy()
+            found = found + 1
+        end
+    end
+    pcall(function() if WindUI then WindUI:Notify({ Title = "Success", Content = "Removed "..found.." Radio(s)", Duration = 3 }) end end)
+end
+
+local function deleteAllDoors()
+    local gameDoors = workspace:FindFirstChild("GameDoors")
+    if not gameDoors then
+        pcall(function() if WindUI then WindUI:Notify({ Title = "Error", Content = "GameDoors not found", Duration = 3 }) end end)
+        return
+    end
+    local count = 0
+    for _, gen in ipairs(gameDoors:GetChildren()) do
+        if gen.Name:match("Generator%d") then
+            local doorsToOpen = gen:FindFirstChild("DoorsToOpen")
+            if doorsToOpen then
+                doorsToOpen:Destroy()
+                count = count + 1
+            end
+        end
+    end
+    pcall(function() if WindUI then WindUI:Notify({ Title = "Success", Content = "Deleted "..count.." DoorsToOpen folder(s)", Duration = 3 }) end end)
+end
+
+local function deleteAllLandmines()
+    local count = 0
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj.Name == "Landmine" and obj:IsA("Model") then
+            obj:Destroy()
+            count = count + 1
+        end
+    end
+    pcall(function() if WindUI then WindUI:Notify({ Title = "Success", Content = "Deleted "..count.." landmines", Duration = 3 }) end end)
+end
+
+local teleportPoints = {
+    ["Sector 1"] = {
+        {"Spawn", Vector3.new(-55, -33, -1410)},
+        {"Generator 1", Vector3.new(135, -30, -1225)},
+        {"Reactor 4", Vector3.new(-230, -30, -1428)},
+        {"Mutant", Vector3.new(-155, -33, -1565)},
+        {"Valve", Vector3.new(-225, -35, -1635)},
+        {"Generator 2", Vector3.new(-145, -30, -1149)},
+    },
+    ["Sector 2"] = {
+        {"Sector entrance", Vector3.new(-110, -10, -825)},
+        {"Russman's office", Vector3.new(38, -10, -917)},
+        {"Armory", Vector3.new(-45, -10, -894)},
+        {"Keycard", Vector3.new(50, -10, -1054)},
+        {"Steve Remington", Vector3.new(-30, 0, -1058)},
+    },
+    ["Sector 3"] = {
+        {"Sector entrance", Vector3.new(208, -31, -1171)},
+        {"Crates 1-3", Vector3.new(289, -31, -1216)},
+        {"Crate 4", Vector3.new(676, -31, -1342)},
+        {"Crate 5", Vector3.new(597, -49, -1395)},
+        {"Crate 6", Vector3.new(471, -50, -1293)},
+        {"C4 crate 1", Vector3.new(462, -31, -1004)},
+        {"C4 crate 2", Vector3.new(349, -31, -817)},
+        {"C4 crate 3", Vector3.new(636, -31, -754)},
+        {"C4 crate 4", Vector3.new(843, -18, -1060)},
+        {"Keycard", Vector3.new(774, -31, -857)},
+    },
+    ["Out-of-map"] = {
+        {"Baseplate", Vector3.new(-200, -2, -75)},
+        {"Rasonian armory", Vector3.new(63, 23, -1705)}
+    },
+}
+
+local function teleportTo(position)
+    local char = LocalPlayer.Character
+    if char and char:FindFirstChild("HumanoidRootPart") then
+        char:PivotTo(CFrame.new(position))
+    end
+end
+
+local function teleportToCFrame(cf)
+    local char = LocalPlayer.Character
+    if char and char:FindFirstChild("HumanoidRootPart") then
+        char:PivotTo(cf)
+    end
+end
+
+local RestrictedServerCFrame = CFrame.new(
+    -80.9715881, -28.5348167, -1419.7843,
+    0.996191859, 0, 0.0871884301,
+    0, 1, 0,
+    -0.0871884301, 0, 0.996191859
+)
+
+local toggleAnims = {
+    ["Artur Novas's idle"] = "rbxassetid://105747901312742",
+    ["Adam Dice (died)"] = "rbxassetid://114023816208972",
+    ["Chimera's walk (old)"] = "rbxassetid://97147187591899",
+    ["Chimera's run (old)"] = "rbxassetid://95054120636955",
+    ["Sinitzyn's idle"] = "rbxassetid://110122744601596",
+    ["Sinitzyn's stun"] = "rbxassetid://111159713841127",
+    ["Kamikaze's walk"] = "rbxassetid://87989829896123",
+    ["Kamikaze's run"] = "rbxassetid://78355773495995",
+    ["Mikhail William's walk (old)"] = "rbxassetid://100407162198079",
+    ["Mikhail William's run (old)"] = "rbxassetid://126189604062142",
+    ["Mikhail William's walk"] = "rbxassetid://91584116987163",
+    ["Mikhail William's run"] = "rbxassetid://88561714950741",
+    ["Dave's walk"] = "rbxassetid://102796637818967",
+    ["Dave's idle"] = "rbxassetid://114416822114803",
+    ["Dave's run"] = "rbxassetid://117962541964796",
+    ["Gilbert's idle"] = "rbxassetid://93686257760742",
+    ["Gabriel Campos's idle"] = "rbxassetid://90243612758647",
+    ["Elsher Tachyon's idle"] = "rbxassetid://77191557762002",
+    ["Lurker's idle"] = "rbxassetid://86501473853720",
+    ["Lurker's sleeping"] = "rbxassetid://115201807246648",
+    ["Manhattan Ristretto's idle"] = "rbxassetid://137802244588968",
+    ["Masterbait"] = "rbxassetid://72042024",
+    ["Mikhail Willaim's idle (old)"] = "rbxassetid://88875709567990",
+    ["Mikhail William's idle"] = "rbxassetid://87959458481723",
+    ["Mikhail William's walk"] = "rbxassetid://91584116987163",
+    ["Mikhail William's run"] = "rbxassetid://88561714950741",
+    ["Mutant crawler idle"] = "rbxassetid://81279098398635",
+    ["Slasher's idle (old)"] = "rbxassetid://91056825760026",
+    ["Slasher's idle"] = "rbxassetid://95464797704887",
+    ["Slasher's walk"] = "rbxassetid://139858886667310",
+    ["Slasher's stun"] = "rbxassetid://137568989278456",
+    ["Slasher's run"] = "rbxassetid://94555617501510",
+    ["Stan's idle"] = "rbxassetid://108552997989260",
+    ["MGF scared"] = "rbxassetid://86398576306953",
+    ["MGF patrol"] = "rbxassetid://131603010936163",
+    ["MGF musician"] = "rbxassetid://138827413895574",
+    ["MGF dying"] = "rbxassetid://128467654154071",
+    ["MGF medic"] = "rbxassetid://129366509916255",
+    ["MGF injured"] = "rbxassetid://94302036679429",
+    ["MGF idle (1)"] = "rbxassetid://113537404842453",
+    ["MGF idle (2)"] = "rbxassetid://102193570284695",
+    ["Viral Executioner's idle"] = "rbxassetid://97492866706742",
+    ["Viral Executioner's walk"] = "rbxassetid://103392791669526",
+    ["Viral Commander's walk"] = "rbxassetid://17621267464",
+    ["Viral Commander's run"] = "rbxassetid://111821553591135",
+    ["Head shake"] = "rbxassetid://118621065272904",
+    ["Unstable"] = "rbxassetid://9146103628",
+    ["Josh Katzmann idle"] = "rbxassetid://131498119560497",
+    ["Josh Katzmann healed idle"] = "rbxassetid://139426604018597",
+}
+
+local buttonAnims = {
+    ["Adam Dice's death"] = "rbxassetid://102514666836619",
+    ["Chimera's victim (old)"] = "rbxassetid://83991914102646",
+    ["Chimera's teleport (old)"] = "rbxassetid://126809285460597",
+    ["Chimera's enrage (old)"] = "rbxassetid://75151963392982",
+    ["Chimera's execution (old)"] = "rbxassetid://97305733594978",
+    ["Chimera's death"] = "rbxassetid://72189339897414",
+    ["Chimera's execution"] = "rbxassetid://128010889227844",
+    ["Chimera's enrage"] = "rbxassetid://99134420474156",
+    ["Chimera's teleport (1)"] = "rbxassetid://112732398453305",
+    ["Chimera's teleport (2)"] = "rbxassetid://136368566634578",
+    ["Chimera's teleport execution (1)"] = "rbxassetid://112634711476303",
+    ["Chimera's teleport execution (2)"] = "rbxassetid://135404812014332",
+    ["Chimera's last stand"] = "rbxassetid://110849469223486",
+    ["Chimera's punch"] = "rbxassetid://84314656273153",
+    ["Cultist's dropkick"] = "rbxassetid://103266367846238",
+    ["Cultist's miss"] = "rbxassetid://120641479913190",
+    ["Cloaker's run"] = "rbxassetid://131730874916280",
+    ["Controllable infected's turn (old)"] = "rbxassetid://136775254837264",
+    ["Cough"] = "rbxassetid://111615919261340",
+    ["Gilbert's execution"] = "rbxassetid://125655523925085",
+    ["Gilbert's victim"] = "rbxassetid://135138331651211",
+    ["D-Zero's vent"] = "rbxassetid://116242805691656",
+    ["D-Zero's execution"] = "rbxassetid://127050736497150",
+    ["Sinitzyn's swing"] = "rbxassetid://109639053938974",
+    ["Sinitzyn's kick"] = "rbxassetid://139352596916392",
+    ["Sinitzyn's enrage"] = "rbxassetid://98239206283649",
+    ["Sinitzyn's execution (RPD)"] = "rbxassetid://136147569002553",
+    ["Sinitzyn's execution (melee)"] = "rbxassetid://81984907411347",
+    ["Sinitzyn's explosion"] = "rbxassetid://99615889025883",
+    ["Slasher's swing"] = "rbxassetid://103822882233361",
+    ["Slasher's execution"] = "rbxassetid://132206439126644",
+    ["Slasher's victim"] = "rbxassetid://133617679957232",
+    ["Shielder's execution"] = "rbxassetid://90580282540451",
+    ["Slit Neck"] = "rbxassetid://130568157355000",
+    ["Infection fall (1)"] = "rbxassetid://99985127815659",
+    ["Infection fall (2)"] = "rbxassetid://139465334169627",
+    ["Iris's rage"] = "rbxassetid://102771532479094",
+    ["Kick"] = "rbxassetid://86079982232120",
+    ["Punch"] = "rbxassetid://83700864626681",
+    ["Taunt"] = "rbxassetid://80378935722704",
+    ["Josh Katzmann healed"] = "rbxassetid://85697630315285",
+    ["Lurker awaking"] = "rbxassetid://138937044212276",
+    ["Mutant stun"] = "rbxassetid://111539044506405",
+    ["Elephant foot"] = "rbxassetid://139981313122152",
+    ["Riser's resurrection"] = "rbxassetid://116866937096686",
+    ["Riser's death"] = "rbxassetid://89976361144233",
+    ["Hatred kill (1)"] = "rbxassetid://138691140561523",
+    ["Hatred kill (2)"] = "rbxassetid://91463196236370",
+    ["Hatred kill (3)"] = "rbxassetid://83632013221100",
+    ["Hatred kill (4)"] = "rbxassetid://91849031357031",
+    ["Viral runner's execution"] = "rbxassetid://84530831648572",
+    ["Viral runner's victim"] = "rbxassetid://76887258783187",
+    ["Viral runner's maul"] = "rbxassetid://135884501960780",
+    ["Viral runner's maul victim"] = "rbxassetid://118194067755191",
+    ["Viral leader's execution"] = "rbxassetid://84358691838862",
+    ["Viral leader's victim"] = "rbxassetid://76887258783187",
+    ["Viral slasher's execution"] = "rbxassetid://132206439126644",
+    ["Viral slasher's victim"] = "rbxassetid://133617679957232",
+    ["MGF's last stand"] = "rbxassetid://117105602056649",
+}
+
+local activeAnimTrack = nil
+
+local function playToggleAnim(id, state)
+    local char = LocalPlayer.Character
+    if not char then return end
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+    local animator = humanoid:FindFirstChildOfClass("Animator") or Instance.new("Animator", humanoid)
+
+    if state then
+        if activeAnimTrack then activeAnimTrack:Stop() end
+        local anim = Instance.new("Animation")
+        anim.AnimationId = id
+        activeAnimTrack = animator:LoadAnimation(anim)
+        activeAnimTrack.Looped = true
+        activeAnimTrack:Play()
+    else
+        if activeAnimTrack then
+            activeAnimTrack:Stop()
+            activeAnimTrack = nil
+        end
+    end
+end
+
+local function playButtonAnim(id)
+    local char = LocalPlayer.Character
+    if not char then return end
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+    local animator = humanoid:FindFirstChildOfClass("Animator") or Instance.new("Animator", humanoid)
+    local anim = Instance.new("Animation")
+    anim.AnimationId = id
+    local track = animator:LoadAnimation(anim)
+    track:Play()
+end
+
+local function unlockThirdPerson()
+    pcall(function()
+        LocalPlayer.CameraMaxZoomDistance = 999
+        LocalPlayer.CameraMode = Enum.CameraMode.Classic
+        UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+        if Camera then Camera.CameraType = Enum.CameraType.Custom end
+    end)
+end
+
+local function resetThirdPerson()
+    pcall(function()
+        LocalPlayer.CameraMaxZoomDistance = 50
+        LocalPlayer.CameraMode = Enum.CameraMode.LockFirstPerson
+        UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+        if Camera then Camera.CameraType = Enum.CameraType.Custom end
+    end)
+end
+
+local function loadAnimation(character, weaponName)
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+    local animator = humanoid:FindFirstChildOfClass("Animator") or Instance.new("Animator", humanoid)
+    local animation = Instance.new("Animation")
+    animation.AnimationId = WeaponAnimations[weaponName] or WeaponAnimations.Default
+    return animator:LoadAnimation(animation)
+end
+
+local function playSwingSound(part)
+    local sound = Instance.new("Sound")
+    sound.SoundId = "rbxassetid://166083610"
+    sound.Volume = 1
+    sound.PlaybackSpeed = 1
+    sound.Parent = part:FindFirstChild("HumanoidRootPart") or part
+    sound:Play()
+    Debris:AddItem(sound, 2)
+end
+
+local function getCooldownContainer()
+    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+    if not playerGui then return nil end
+    local character = LocalPlayer.Character
+    local tool = character and character:FindFirstChildOfClass("Tool")
+    if not tool then return nil end
+    local gui = playerGui:FindFirstChild(tool.Name)
+    return gui and gui:FindFirstChild("Data") and gui.Data:FindFirstChild("Cooldowns")
+end
+
+local function setCooldownVisibility(name, state)
+    local container = getCooldownContainer()
+    if not container then return end
+    local cdFrame = container:FindFirstChild(name)
+    if cdFrame then cdFrame.Visible = state end
+    local bashVis = container:FindFirstChild("Bash") and container.Bash.Visible
+    local kickVis = container:FindFirstChild("Kick") and container.Kick.Visible
+    if container then container.Visible = (bashVis or kickVis) and true or false end
+end
+
+local function resetFade(instance)
+    for _, v in ipairs(instance:GetDescendants()) do
+        if v:IsA("Frame") and v:GetAttribute("_cd_BackgroundTransparency") then
+            v.BackgroundTransparency = v:GetAttribute("_cd_BackgroundTransparency")
+        elseif (v:IsA("ImageLabel") or v:IsA("ImageButton")) then
+            if v:GetAttribute("_cd_ImageTransparency") then v.ImageTransparency = v:GetAttribute("_cd_ImageTransparency") end
+            if v:GetAttribute("_cd_BackgroundTransparency") then v.BackgroundTransparency = v:GetAttribute("_cd_BackgroundTransparency") end
+        elseif (v:IsA("TextLabel") or v:IsA("TextButton") or v:IsA("TextBox")) then
+            if v:GetAttribute("_cd_TextTransparency") then v.TextTransparency = v:GetAttribute("_cd_TextTransparency") end
+            if v:GetAttribute("_cd_BackgroundTransparency") then v.BackgroundTransparency = v:GetAttribute("_cd_BackgroundTransparency") end
+        elseif v:IsA("UIStroke") and v:GetAttribute("_cd_Transparency") then
+            v.Transparency = v:GetAttribute("_cd_Transparency")
+        end
+    end
+end
+
+local function fadeOut(instance, duration)
+    local info = TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
+    for _, v in ipairs(instance:GetDescendants()) do
+        if v:IsA("Frame") then
+            if not v:GetAttribute("_cd_BackgroundTransparency") then v:SetAttribute("_cd_BackgroundTransparency", v.BackgroundTransparency) end
+            TweenService:Create(v, info, { BackgroundTransparency = 1 }):Play()
+        elseif v:IsA("ImageLabel") or v:IsA("ImageButton") then
+            if not v:GetAttribute("_cd_ImageTransparency") then v:SetAttribute("_cd_ImageTransparency", v.ImageTransparency) end
+            if not v:GetAttribute("_cd_BackgroundTransparency") then v:SetAttribute("_cd_BackgroundTransparency", v.BackgroundTransparency) end
+            TweenService:Create(v, info, { ImageTransparency = 1, BackgroundTransparency = 1 }):Play()
+        elseif v:IsA("TextLabel") or v:IsA("TextButton") or v:IsA("TextBox") then
+            if not v:GetAttribute("_cd_TextTransparency") then v:SetAttribute("_cd_TextTransparency", v.TextTransparency) end
+            if not v:GetAttribute("_cd_BackgroundTransparency") then v:SetAttribute("_cd_BackgroundTransparency", v.BackgroundTransparency) end
+            TweenService:Create(v, info, { TextTransparency = 1, BackgroundTransparency = 1 }):Play()
+        elseif v:IsA("UIStroke") then
+            if not v:GetAttribute("_cd_Transparency") then v:SetAttribute("_cd_Transparency", v.Transparency) end
+            TweenService:Create(v, info, { Transparency = 1 }):Play()
+        end
+    end
+end
+
+local function getCooldownBar(name)
+    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+    if not playerGui then return nil end
+    local character = LocalPlayer.Character
+    local tool = character and character:FindFirstChildOfClass("Tool")
+    if not tool then return nil end
+    local screenGui = playerGui:FindFirstChild(tool.Name)
+    if screenGui and screenGui:FindFirstChild("Data") and screenGui.Data:FindFirstChild("Cooldowns") and screenGui.Data.Cooldowns:FindFirstChild(name) then
+        return screenGui.Data.Cooldowns[name]:FindFirstChild("Bar")
+    end
+    return nil
+end
+
+local function playCooldown(name, duration, progress)
+    local currentCounter = CooldownCounter
+    local bar = getCooldownBar(name)
+    if not bar then return end
+    local container = getCooldownContainer()
+    local mainFrame = container and container:FindFirstChild(name)
+    if mainFrame then resetFade(mainFrame) end
+    if ActiveTweens[name] then ActiveTweens[name]:Cancel(); ActiveTweens[name] = nil end
+    bar.AnchorPoint = Vector2.new(0, 1)
+    bar.Position = UDim2.new(0, 0, 1, 0)
+    bar.Size = UDim2.new(1, 0, math.clamp(progress or 0, 0, 1), 0)
+    bar.Visible = true
+    local tween = TweenService:Create(bar, TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out), { Size = UDim2.new(1, 0, 1, 0) })
+    ActiveTweens[name] = tween
+    if container then setCooldownVisibility(name, true) end
+    tween:Play()
+    tween.Completed:Connect(function()
+        if currentCounter ~= CooldownCounter or ActiveTweens[name] ~= tween then return end
+        ActiveTweens[name] = nil
+        CooldownData[name] = nil
+        if mainFrame then fadeOut(mainFrame, 0.2) end
+        task.delay(0.2, function()
+            if currentCounter ~= CooldownCounter then return end
+            bar.Visible = false
+            if container then setCooldownVisibility(name, false) end
+            if mainFrame then resetFade(mainFrame) end
+        end)
+    end)
+end
+
+local function renderCooldown(name)
+    local data = CooldownData[name]
+    if not data then
+        local container = getCooldownContainer()
+        if container then setCooldownVisibility(name, false) end
+        return
+    end
+    local currentTick = tick()
+    local remaining = data.finish - currentTick
+    if remaining <= 0 then
+        CooldownData[name] = nil
+        local container = getCooldownContainer()
+        if container then setCooldownVisibility(name, false) end
+        return
+    end
+    playCooldown(name, remaining, data.duration > 0 and math.clamp((currentTick - data.start) / data.duration, 0, 1) or 0)
+end
+
+local function renderAllCooldowns()
+    CooldownCounter = CooldownCounter + 1
+    for k, v in pairs(ActiveTweens) do if v then v:Cancel() end; ActiveTweens[k] = nil end
+    renderCooldown("Bash")
+    renderCooldown("Kick")
+end
+
+if NeckSnapEvent then
+    NeckSnapEvent.OnClientEvent:Connect(function()
+        if CurrentAnimTrack and CurrentAnimTrack.IsPlaying then CurrentAnimTrack:Stop() end
+    end)
+end
+
+if BashCooldownUI then
+    BashCooldownUI.OnClientEvent:Connect(function(actionType, duration)
+        if actionType == "bash" then actionType = "Bash" end
+        if actionType == "kick" then actionType = "Kick" end
+        local currentTick = tick()
+        CooldownData[actionType] = { start = currentTick, duration = duration, finish = currentTick + duration }
+        renderAllCooldowns()
+    end)
+end
+
+local function onAttack()
+    if not Config.GAttackEnabled then return end
+    local currentTick = tick()
+    if not Config.BypassCombatCooldowns then
+        if currentTick - LastAttackTick < 0.1 then return end
+    end
+    LastAttackTick = currentTick
+    local character = LocalPlayer.Character
+    if not character then return end
+    local tool = character:FindFirstChildOfClass("Tool")
+    local isHoldingValid = tool and ValidCombatTools[tool.Name] or false
+    if not isHoldingValid then return end
+    local char2 = LocalPlayer.Character
+    if not char2 then return end
+    local timeDiff = currentTick - LastSpecialAttackTick
+    if IsSpecialAttackActive and (Config.BypassCombatCooldowns or timeDiff <= 2) then
+        if PunchEvent then PunchEvent:FireServer() end
+        return
+    end
+    if not Config.BypassCombatCooldowns then
+        if timeDiff < 5.1 then return end
+    end
+    LastSpecialAttackTick = currentTick
+    IsSpecialAttackActive = true
+    task.delay(2, function()
+        if IsSpecialAttackActive and tick() - LastSpecialAttackTick >= 2 then
+            IsSpecialAttackActive = false
+        end
+    end)
+    if CurrentAnimTrack and CurrentAnimTrack.IsPlaying and not Config.BypassCombatCooldowns then
+        return
+    end
+    local equippedTool = char2:FindFirstChildOfClass("Tool")
+    CurrentAnimTrack = loadAnimation(char2, equippedTool and equippedTool.Name or "Default")
+    if not CurrentAnimTrack then
+        if PunchEvent then PunchEvent:FireServer() end
+        return
+    end
+    CurrentAnimTrack:Play()
+    playSwingSound(char2)
+    CurrentAnimTrack.Stopped:Connect(function()
+        task.wait(0.1)
+        CurrentAnimTrack = nil
+    end)
+    if PunchEvent then PunchEvent:FireServer() end
+end
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.G or input.KeyCode == Enum.KeyCode.ButtonB then
+        onAttack()
+    end
+    if input.KeyCode == Enum.KeyCode.LeftShift or input.KeyCode == Enum.KeyCode.RightShift then
+        isShiftHeld = true
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.KeyCode == Enum.KeyCode.LeftShift or input.KeyCode == Enum.KeyCode.RightShift then
+        isShiftHeld = false
+        local character = LocalPlayer.Character
+        if character then
+            local humanoid = character:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                if Config.SpeedHackEnabled then humanoid.WalkSpeed = Config.WalkSpeedValue end
+            end
+        end
+    end
+end)
+
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+        if Config.AutoSpamAttack and Config.GAttackEnabled then pcall(onAttack) end
+    end
+end)
+
+task.spawn(function()
+    while true do
+        task.wait(0.2)
+        if Config.AutoWipeBlood then
+            pcall(function()
+                local gui = LocalPlayer.PlayerGui:FindFirstChild("Gui")
+                if gui then
+                    for _, child in pairs(gui:GetChildren()) do
+                        if child.Name == "blood" then
+                            child.Name = "clean"
+                            TweenService:Create(child, TweenInfo.new(0.2), { ImageTransparency = 1 }):Play()
+                            Debris:AddItem(child, 0.5)
+                        end
+                    end
+                end
+            end)
+        end
+    end
+end)
+
+local function hookToolSwap(char)
+    char.ChildAdded:Connect(function(child)
+        if child:IsA("Tool") then task.defer(renderAllCooldowns) end
+    end)
+    char.ChildRemoved:Connect(function(child)
+        if child:IsA("Tool") then task.defer(renderAllCooldowns) end
+    end)
+end
+
+if LocalPlayer.Character then
+    hookToolSwap(LocalPlayer.Character)
+    task.defer(renderAllCooldowns)
+end
+
+LocalPlayer.CharacterAdded:Connect(function(char)
+    hookToolSwap(char)
+    task.defer(renderAllCooldowns)
+    local humanoid = char:WaitForChild("Humanoid", 5)
+    if humanoid then savedHipHeight = humanoid.HipHeight end
+    if Config.FakeDeath then
+        task.wait(0.5)
+        toggleFakeDeath()
+    end
+    if Config.FakeInjured then
+        task.wait(0.5)
+        toggleFakeInjured()
+    end
+    canInfect = true
+end)
+
+local ClientEvents = ReplicatedStorage:FindFirstChild("Events")
+if ClientEvents and ClientEvents:FindFirstChild("client") and ClientEvents.client:FindFirstChild("Event") then
+    pcall(function()
+        ClientEvents.client.Event:Connect(function(p1, ...)
+            if Config.AntiCamShake and (p1 == "camspring" or p1 == "recoil" or p1 == "shake") then
+                return
+            end
+        end)
+    end)
+end
+
+local function checkMob(obj)
+    if obj:IsA("Model") and obj:FindFirstChild("HumanoidRootPart") and obj:FindFirstChildOfClass("Humanoid") then
+        if obj ~= LocalPlayer.Character and obj.Name ~= LocalPlayer.Name and not Players:GetPlayerFromCharacter(obj) and not table.find(CachedMobs, obj) then
+            table.insert(CachedMobs, obj)
+            local mobId = obj:GetDebugId()
+            obj.AncestryChanged:Connect(function(child, parent)
+                if parent == nil then
+                    local line = tracerCache[mobId]
+                    if line then line.Visible = false end
+                    for i, m in ipairs(CachedMobs) do
+                        if m == obj then
+                            table.remove(CachedMobs, i)
+                            break
+                        end
+                    end
+                end
+            end)
+        end
+    end
+end
+
+task.spawn(function()
+    local allDescendants = workspace:GetDescendants()
+    for i, obj in ipairs(allDescendants) do
+        checkMob(obj)
+        if i % 200 == 0 then task.wait() end
+    end
+end)
+
+workspace.DescendantAdded:Connect(function(descendant)
+    if descendant:IsA("Model") then
+        task.wait(0.3)
+        checkMob(descendant)
+    end
+end)
+
+UserInputService.JumpRequest:Connect(function()
+    local character = LocalPlayer.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    local hrp = character and character:FindFirstChild("HumanoidRootPart")
+    if not hrp or not humanoid then return end
+    local actualJumpPower = Config.JumpPowerEnabled and Config.JumpPowerValue or 50
+    if Config.InfiniteJump then
+        hrp.Velocity = Vector3.new(hrp.Velocity.X, actualJumpPower, hrp.Velocity.Z)
+        humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+    end
+    if Config.JumpBypassActive and not Config.InfiniteJump then
+        if humanoid.FloorMaterial ~= Enum.Material.Air then
+            hrp.Velocity = Vector3.new(hrp.Velocity.X, actualJumpPower, hrp.Velocity.Z)
+        end
+    end
+end)
+
+local function getTracer(id)
+    if not Drawing then return nil end
+    if not tracerCache[id] then
+        local line = Drawing.new("Line")
+        line.Thickness = 1.5
+        line.Transparency = 1
+        tracerCache[id] = line
+    end
+    return tracerCache[id]
+end
+
+Players.PlayerRemoving:Connect(function(player)
+    local line = tracerCache[player.UserId]
+    if line then line.Visible = false end
+end)
+
+RunService.Stepped:Connect(function()
+    if Config.NoclipEnabled and LocalPlayer.Character then
+        for _, part in pairs(LocalPlayer.Character:GetDescendants()) do
+            if part:IsA("BasePart") then part.CanCollide = false end
+        end
+    end
+end)
+
+RunService.RenderStepped:Connect(function(dt)
+    local character = LocalPlayer.Character
+    if not character then return end
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid or humanoid.Health <= 0 then return end
+
+    if Config.SpeedHackEnabled then
+        humanoid.WalkSpeed = Config.WalkSpeedValue
+    end
+
+    if Config.InfiniteStaminaEnabled then
+        local hrp = character:FindFirstChild("HumanoidRootPart")
+        local isMoving = hrp and hrp.Velocity.Magnitude > 2
+        if isShiftHeld and isMoving then
+            humanoid.WalkSpeed = 18
+        elseif not isShiftHeld then
+            if Config.SpeedHackEnabled then
+                humanoid.WalkSpeed = Config.WalkSpeedValue
+            else
+                humanoid.WalkSpeed = 9
+            end
+        end
+        local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+        if playerGui then
+            local gui = playerGui:FindFirstChild("Gui")
+            if gui then
+                local heartbeat = gui:FindFirstChild("heartbeat")
+                if heartbeat then
+                    if heartbeat:IsA("Sound") then heartbeat:Stop() end
+                    heartbeat:Destroy()
+                end
+                local heartbeat2 = gui:FindFirstChild("heartbeat2")
+                if heartbeat2 then
+                    if heartbeat2:IsA("Sound") then heartbeat2:Stop() end
+                    heartbeat2:Destroy()
+                end
+                local vignette = gui:FindFirstChild("vignette")
+                if vignette then vignette.Visible = false end
+                local statusFrame = gui:FindFirstChild("statusFrame")
+                if statusFrame then
+                    local stamina = statusFrame:FindFirstChild("stamina")
+                    if stamina then
+                        local bar = stamina:FindFirstChild("bar")
+                        if bar then
+                            bar.Size = UDim2.new(1, 0, 1, 0)
+                        end
+                        local overlay = stamina:FindFirstChild("overlay")
+                        if overlay then overlay.Visible = false end
+                    end
+                end
+            end
+        end
+    end
+
+    if Config.FullBright then
+        Lighting.Ambient = Color3.fromRGB(255, 255, 255)
+        Lighting.OutdoorAmbient = Color3.fromRGB(255, 255, 255)
+        Lighting.Brightness = 2
+    end
+    if Config.NoFog then
+        Lighting.FogEnd = 999999999
+        Lighting.FogStart = 999999999
+    else
+        Lighting.FogEnd = OrigFogEnd
+        Lighting.FogStart = OrigFogStart
+    end
+    if Config.ImmuneLookHazard then
+        if gameAee then gameAee.Contrast = 0 end
+        if gameRadiationTint then gameRadiationTint.Contrast = 0 end
+    end
+
+    if Config.CustomFOVEnabled then
+        if Camera.FieldOfView ~= Config.FOVValue then
+            TweenService:Create(Camera, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { FieldOfView = Config.FOVValue }):Play()
+        end
+    else
+        if Camera.FieldOfView ~= OrigFOV then
+            TweenService:Create(Camera, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { FieldOfView = OrigFOV }):Play()
+        end
+    end
+
+    if Config.UnlockThirdPerson then
+        if LocalPlayer.CameraMode ~= Enum.CameraMode.Classic then
+            LocalPlayer.CameraMode = Enum.CameraMode.Classic
+        end
+        if LocalPlayer.CameraMaxZoomDistance < 999 then
+            LocalPlayer.CameraMaxZoomDistance = 999
+        end
+    else
+        if LocalPlayer.CameraMode ~= Enum.CameraMode.LockFirstPerson then
+            LocalPlayer.CameraMode = Enum.CameraMode.LockFirstPerson
+        end
+        if LocalPlayer.CameraMaxZoomDistance > 50 then
+            LocalPlayer.CameraMaxZoomDistance = 50
+        end
+    end
+end)
+
+task.spawn(function()
+    while true do
+        if Config.AntiAFKEnabled then
+            pcall(function()
+                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Unknown, false, game)
+                task.wait(1)
+                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Unknown, false, game)
+            end)
+        end
+        task.wait(60)
+    end
+end)
+
+local animatorIdleTrack = nil
+local animatorWalkTrack = nil
+local animatorRunTrack = nil
+local animatorLastState = nil
+
+local function filterAnimNames(endPatterns)
+    local result = {}
+    for name, id in pairs(toggleAnims) do
+        local lower = name:lower()
+        for _, pattern in ipairs(endPatterns) do
+            if lower:sub(-#pattern) == pattern then
+                table.insert(result, name)
+                break
+            end
+        end
+    end
+    return result
+end
+
+local idleAnimNames = filterAnimNames({"idle", "idle (old)"})
+local walkAnimNames = filterAnimNames({"walk", "walk (old)"})
+local runAnimNames = filterAnimNames({"run", "run (old)"})
+
+local function stopAllAnimatorTracks()
+    if animatorIdleTrack then animatorIdleTrack:Stop(); animatorIdleTrack = nil end
+    if animatorWalkTrack then animatorWalkTrack:Stop(); animatorWalkTrack = nil end
+    if animatorRunTrack then animatorRunTrack:Stop(); animatorRunTrack = nil end
+end
+
+local function applyAnimatorState()
+    if Config.FakeDeath then
+        stopAllAnimatorTracks()
+        return
+    end
+
+    if not Config.AnimatorEnabled then
+        stopAllAnimatorTracks()
+        return
+    end
+
+    local char = LocalPlayer.Character
+    if not char then return end
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not humanoid or humanoid.Health <= 0 then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    local velocity = hrp.Velocity
+    local horizontalVel = Vector3.new(velocity.X, 0, velocity.Z)
+    local speed = horizontalVel.Magnitude
+
+    local newState
+    if isShiftHeld and speed > 2 then
+        newState = "run"
+    elseif speed > 0.5 then
+        newState = "walk"
+    else
+        newState = "idle"
+    end
+
+    if newState ~= animatorLastState then
+        animatorLastState = newState
+        stopAllAnimatorTracks()
+        if newState == "idle" and Config.AnimatorIdleAnimName then
+            animatorIdleTrack = playAnimationOnHumanoid(toggleAnims[Config.AnimatorIdleAnimName], true)
+        elseif newState == "walk" and Config.AnimatorWalkAnimName then
+            animatorWalkTrack = playAnimationOnHumanoid(toggleAnims[Config.AnimatorWalkAnimName], true)
+        elseif newState == "run" and Config.AnimatorRunAnimName then
+            animatorRunTrack = playAnimationOnHumanoid(toggleAnims[Config.AnimatorRunAnimName], true)
+        end
+    end
+end
+
+local WindUI = nil
+local loadSuccess, loadErr = pcall(function()
+    WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
+end)
+
+if not loadSuccess or not WindUI then
+    game:GetService("StarterGui"):SetCore("SendNotification", {
+        Title = "WindUI Error",
+        Text = "Failed to load WindUI. Check your internet or try a different executor.",
+        Duration = 15
+    })
+    return
+end
+
+if not WindUI.Creator or not WindUI.CreateWindow or not WindUI.SetTheme or not WindUI.Notify then
+    game:GetService("StarterGui"):SetCore("SendNotification", {
+        Title = "WindUI Error",
+        Text = "WindUI loaded but missing required methods. Please update or use another script.",
+        Duration = 15
+    })
+    return
+end
+
+pcall(function()
+    WindUI.Creator.AddThemes({
+        "Light", "Dark", "Rose"
+    })
+end)
+
+local Window = nil
+local createSuccess, createErr = pcall(function()
+    Window = WindUI:CreateWindow({
+        Title = "Sentinel - Examination",
+        Author = "Sentinel",
+        Folder = "Sentinel",
+        ScrollBarEnabled = true,
+        Size = UDim2.fromOffset(750, 650),
+        ToggleKey = Enum.KeyCode.K,
+        User = {
+            Enabled = true,
+            Anonymous = false,
+            Callback = nil
+        }
+    })
+end)
+
+if not createSuccess or not Window then
+    game:GetService("StarterGui"):SetCore("SendNotification", {
+        Title = "WindUI Error",
+        Text = "Failed to create window. Error: " .. tostring(createErr),
+        Duration = 15
+    })
+    return
+end
+
+local function safeCall(func, ...)
+    local ok, err = pcall(func, ...)
+    if not ok then
+        warn("Error in safeCall: ", err)
+    end
+    return ok, err
+end
+
+safeCall(function()
+    Window:Tag({
+        Title = "v7.00.10",
+        Icon = "shield-check",
+        Color = Color3.fromHex("#30ff6a"),
+        Radius = 13
+    })
+end)
+
+local successProduct, productInfo = pcall(function()
+    return MarketplaceService:GetProductInfo(game.PlaceId, Enum.InfoType.Asset)
+end)
+local GameLastUpdateString = if successProduct and (productInfo and productInfo.Updated) then DateTime.fromUnixTimestamp(DateTime.fromIsoDate(productInfo.Updated).UnixTimestamp + -18000):FormatUniversalTime("MM/DD/YYYY HH:mm:ss", "en-us") .. " EST" else "n/a"
+
+local Tabs = {}
+safeCall(function()
+    Tabs = {
+        Player = Window:Tab({ Title = "Player", Icon = "user" }),
+        ESP = Window:Tab({ Title = "ESP", Icon = "eye" }),
+        Combat = Window:Tab({ Title = "Combat", Icon = "crosshair" }),
+        World = Window:Tab({ Title = "World", Icon = "globe" }),
+        Fun = Window:Tab({ Title = "Fun", Icon = "smile" }),
+        Game = Window:Tab({ Title = "Game", Icon = "trophy" }),
+        Settings = Window:Tab({ Title = "Settings", Icon = "settings" }),
+        Dev = Window:Tab({ Title = "Dev", Icon = "code" }),
+        About = Window:Tab({ Title = "About", Icon = "info" }),
+    }
+end)
+
+if not Tabs or not Tabs.Player then
+    game:GetService("StarterGui"):SetCore("SendNotification", {
+        Title = "Error",
+        Text = "Failed to create tabs. Check console for details.",
+        Duration = 10
+    })
+    return
+end
+
+if not isfolder("sentinel/configs/") then
+    makefolder("sentinel/configs/")
+end
+
+do
+    local tab = Tabs.Player
+    
+    local WalkspeedSection = tab:Section({Title = "Walkspeed Settings", Opened = true})
+    WalkspeedSection:Toggle({ Title = "Enable Speed Modifiers", Default = false, Callback = function(v) Config.SpeedHackEnabled = v end })
+    WalkspeedSection:Slider({ Title = "WalkSpeed", Value = {Min = 1, Max = 150, Default = 16}, Rounding = 0, Enabled = true, Callback = function(v) Config.WalkSpeedValue = v end })
+    WalkspeedSection:Toggle({ Title = "Infinite Stamina [BETA]", Default = false, Callback = function(v)
+        Config.InfiniteStaminaEnabled = v
+        if not v then
+            isShiftHeld = false
+            local character = LocalPlayer.Character
+            if character then
+                local humanoid = character:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    if Config.SpeedHackEnabled then humanoid.WalkSpeed = Config.WalkSpeedValue else humanoid.WalkSpeed = 9 end
+                end
+            end
+        end
+    end })
+
+    local JumpSection = tab:Section({Title = "Jump Settings", Opened = true})
+    JumpSection:Toggle({ Title = "Enable JumpPower", Default = false, Callback = function(v) Config.JumpPowerEnabled = v end })
+    JumpSection:Slider({ Title = "JumpPower", Value = {Min = 5, Max = 75, Default = 30}, Rounding = 0, Enabled = true, Callback = function(v) Config.JumpPowerValue = v end })
+    JumpSection:Toggle({ Title = "Infinite Jump", Default = false, Callback = function(v) Config.InfiniteJump = v end })
+    JumpSection:Button({ Title = "Bypass Jump AC", Callback = function() Config.JumpBypassActive = not Config.JumpBypassActive end })
+
+    local PhysicSection = tab:Section({Title = "Physic Settings", Opened = true})
+    PhysicSection:Toggle({ Title = "Fly", Default = false, Callback = function(v)
+        Config.FlyEnabled = v
+        if v then
+            CurrentFlyType = Config.FlyType
+            FlySpeed = Config.FlySpeed
+            enableFly(true)
+        else
+            enableFly(false)
+        end
+    end })
+    PhysicSection:Dropdown({ Title = "Fly Method", Values = {"CFrame", "BodyVelocity [BEST]", "Seat [UNDETECTED]"}, Default = "CFrame", Callback = function(v)
+        Config.FlyType = v
+        if Config.FlyEnabled then
+            CurrentFlyType = v
+            enableFly(true)
+        end
+    end })
+    PhysicSection:Slider({ Title = "Fly Speed", Value = {Min = 1, Max = 100, Default = 50}, Rounding = 0, Enabled = true, Callback = function(v)
+        Config.FlySpeed = v
+        FlySpeed = v
+    end })
+    PhysicSection:Toggle({ Title = "Noclip", Default = false, Callback = function(v) Config.NoclipEnabled = v end })
+    PhysicSection:Toggle({ Title = "Disable Stagger", Default = false, Callback = function(value)
+        Config.StaggerEnabled = not value
+        local char = LocalPlayer.Character
+        if char then
+            local clientScripts = char:FindFirstChild("ClientScripts")
+            if clientScripts then
+                local stagger = clientScripts:FindFirstChild("Stagger")
+                if stagger then
+                    stagger.Disabled = not Config.StaggerEnabled
+                end
+            end
+        end
+    end })
+
+    local LandminesSection = tab:Section({Title = "Landmines", Opened = true})
+    LandminesSection:Toggle({ Title = "Ignore Landmines [BETA]", Default = false, Callback = function(v)
+        Config.IgnoreLandmine = v
+        if v then
+            local success, execName = pcall(getexecutorname)
+            if not success or not execName then
+                execName = "Unknown"
+            end
+            local function hookLandmine()
+                if landmineHitEvent then
+                    if pcall(function() return getrawmetatable end) and pcall(function() return hookmetamethod end) then
+                        originalLandmineFire = landmineHitEvent.FireServer
+                        landmineHitEvent.FireServer = function() end
+                        local mt = getrawmetatable(landmineHitEvent)
+                        local oldNamecall = mt.__namecall
+                        mt.__namecall = function(self, ...)
+                            if self == landmineHitEvent then return end
+                            return oldNamecall(self, ...)
+                        end
+                    else
+                        pcall(function() if WindUI then WindUI:Notify({ Title = "Ignore Landmines", Content = execName .. " do not support this function", Duration = 5 }) end end)
+                    end
+                end
+            end
+            hookLandmine()
+            for _, obj in ipairs(workspace:GetDescendants()) do
+                if obj.Name == "Landmine" then
+                    local mine = obj:FindFirstChild("Mine")
+                    if mine and mine:IsA("BasePart") then
+                        mine.CanTouch = false
+                    end
+                end
+            end
+            if not IgnoreLandmineConnection then
+                IgnoreLandmineConnection = workspace.DescendantAdded:Connect(function(desc)
+                    if Config.IgnoreLandmine and desc.Name == "Landmine" then
+                        task.wait(0.1)
+                        local mine = desc:FindFirstChild("Mine")
+                        if mine and mine:IsA("BasePart") then
+                            mine.CanTouch = false
+                        end
+                    end
+                end)
+            end
+        else
+            if originalLandmineFire and landmineHitEvent then
+                landmineHitEvent.FireServer = originalLandmineFire
+                originalLandmineFire = nil
+            end
+            if IgnoreLandmineConnection then
+                IgnoreLandmineConnection:Disconnect()
+                IgnoreLandmineConnection = nil
+            end
+        end
+    end })
+    LandminesSection:Button({ Title = "Delete All Landmines", Callback = deleteAllLandmines })
+
+    local GodmodSection = tab:Section({Title = "God mod [BETA]", Opened = true})
+    GodmodSection:Toggle({ Title = "Godmode", Default = false, Callback = function(v)
+        Config.GodmodeEnabled = v
+        if v then
+            GodmodePreviousPosition = nil
+            GodmodeTeleported = false
+        end
+    end })
+    GodmodSection:Slider({ Title = "Health Threshold", Value = {Min = 1, Max = 99, Default = 10}, Rounding = 0, Enabled = true, Callback = function(v) Config.GodmodeHealthThreshold = v end })
+    GodmodSection:Button({ Title = "Teleport to Baseplate", Callback = function()
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChild("HumanoidRootPart") then
+            GodmodePreviousPosition = char.HumanoidRootPart.CFrame
+            char:PivotTo(CFrame.new(0, 5, 0))
+            GodmodeTeleported = true
+        end
+    end })
+    GodmodSection:Button({ Title = "Return to Previous Position", Callback = function()
+        if GodmodePreviousPosition then
+            local char = LocalPlayer.Character
+            if char and char:FindFirstChild("HumanoidRootPart") then
+                char:PivotTo(GodmodePreviousPosition)
+                GodmodeTeleported = false
+                GodmodePreviousPosition = nil
+            end
+        else
+            pcall(function() if WindUI then WindUI:Notify({ Title = "Error", Content = "No previous position stored", Duration = 2 }) end end)
+        end
+    end })
+
+    local HealthSection = tab:Section({Title = "Character Health", Opened = true})
+    HealthSection:Button({ Title = "Suicide", Callback = function() local character = LocalPlayer.Character; local humanoid = character and character:FindFirstChildOfClass("Humanoid"); if humanoid then humanoid.Health = 0 end end })
+    HealthSection:Button({ Title = "Suicide with Animation", Callback = suicideWithAnimation })
+    HealthSection:Toggle({ Title = "Fake Death", Default = false, Callback = function(v) Config.FakeDeath = v; toggleFakeDeath() end })
+    HealthSection:Toggle({ Title = "Fake Injured (idle)", Default = false, Callback = function(v) Config.FakeInjured = v; toggleFakeInjured() end })
+
+    local InfectionSection = tab:Section({Title = "Player Infection", Opened = true})
+    InfectionSection:Button({ Title = "Fake Controllable Infected", Callback = function()
+        if not canInfect then
+            pcall(function() if WindUI then WindUI:Notify({ Title = "Infection", Content = "You must respawn before starting a new infection.", Duration = 3 }) end end)
+            return
+        end
+        if InfectionActive then
+            pcall(function() if WindUI then WindUI:Notify({ Title = "Infection", Content = "Already active!", Duration = 2 }) end end)
+            return
+        end
+        startInfectionSequence("Controllable")
+    end })
+    InfectionSection:Button({ Title = "Fake Non-Controllable Infected", Callback = function()
+        if not canInfect then
+            pcall(function() if WindUI then WindUI:Notify({ Title = "Infection", Content = "You must respawn before starting a new infection.", Duration = 3 }) end end)
+            return
+        end
+        if InfectionActive then
+            pcall(function() if WindUI then WindUI:Notify({ Title = "Infection", Content = "Already active!", Duration = 2 }) end end)
+            return
+        end
+        startInfectionSequence("NonControllable")
+    end })
+    InfectionSection:Button({ Title = "Get Infected", Callback = function()
+        if not canInfect then
+            pcall(function() if WindUI then WindUI:Notify({ Title = "Infection", Content = "You must respawn before starting a new infection.", Duration = 3 }) end end)
+            return
+        end
+        if InfectionActive then
+            pcall(function() if WindUI then WindUI:Notify({ Title = "Infection", Content = "Already active!", Duration = 2 }) end end)
+            return
+        end
+        local char = LocalPlayer.Character
+        if not char then return end
+        local humanoid = char:FindFirstChildOfClass("Humanoid")
+        if not humanoid then return end
+        if humanoid.Health < 100 then
+            pcall(function() if WindUI then WindUI:Notify({ Title = "Infection Failed", Content = "Sentinel was unable to infect you. You do not meet all the requirements (100 HP+).", Duration = 7 }) end end)
+            return
+        end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+        local originalPos = hrp.CFrame
+
+        local screenGui = Instance.new("ScreenGui")
+        screenGui.Name = "SentinelInfectionOverlay"
+        screenGui.Parent = CoreGui
+        screenGui.IgnoreGuiInset = true
+
+        local blackFrame = Instance.new("Frame")
+        blackFrame.Size = UDim2.new(1, 0, 1, 0)
+        blackFrame.BackgroundColor3 = Color3.new(0, 0, 0)
+        blackFrame.BorderSizePixel = 0
+        blackFrame.Parent = screenGui
+
+        local textLabel = Instance.new("TextLabel")
+        textLabel.Size = UDim2.new(1, 0, 0.2, 0)
+        textLabel.Position = UDim2.new(0, 0, 0.4, 0)
+        textLabel.BackgroundTransparency = 1
+        textLabel.Text = "SENTINEL IS WORKING ON REAL INFECTION..."
+        textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        textLabel.Font = Enum.Font.GothamBold
+        textLabel.TextSize = 24
+        textLabel.TextStrokeTransparency = 0.5
+        textLabel.Parent = screenGui
+
+        local particles = {}
+        for i = 1, 20 do
+            local part = Instance.new("Frame")
+            part.Size = UDim2.new(0, 4, 0, 4)
+            part.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+            part.BackgroundTransparency = 0.5
+            part.Position = UDim2.new(math.random(), 0, math.random(), 0)
+            part.Parent = screenGui
+            table.insert(particles, part)
+
+            local targetY = math.random() * 0.3
+            local duration = math.random() * 2 + 1
+            local tween = TweenService:Create(part, TweenInfo.new(duration, Enum.EasingStyle.Linear), {
+                Position = UDim2.new(part.Position.X.Scale + math.random(-0.1, 0.1), 0, targetY, 0),
+                BackgroundTransparency = 1
+            })
+            tween:Play()
+            tween.Completed:Connect(function()
+                part:Destroy()
+            end)
+        end
+
+        teleportTo(Vector3.new(-90, 46.8, -1759))
+        task.wait(3)
+        char:PivotTo(originalPos)
+        task.wait(0.5)
+
+        local tweenInfo = TweenInfo.new(1, Enum.EasingStyle.Linear)
+        local fadeOut = TweenService:Create(blackFrame, tweenInfo, { BackgroundTransparency = 1 })
+        fadeOut:Play()
+        local textFade = TweenService:Create(textLabel, tweenInfo, { TextTransparency = 1 })
+        textFade:Play()
+        task.wait(1)
+        screenGui:Destroy()
+    end })
+
+    local AnimatorSection = tab:Section({Title = "Animator", Opened = true})
+    AnimatorSection:Toggle({ Title = "Apply Animator Config", Default = false, Callback = function(v)
+        Config.AnimatorEnabled = v
+        if not v then
+            stopAllAnimatorTracks()
+            animatorLastState = nil
+        end
+    end })
+    AnimatorSection:Dropdown({ Title = "Idle Animation", Values = idleAnimNames, Default = nil, Callback = function(value) Config.AnimatorIdleAnimName = value end })
+    AnimatorSection:Dropdown({ Title = "Walk Animation", Values = walkAnimNames, Default = nil, Callback = function(value) Config.AnimatorWalkAnimName = value end })
+    AnimatorSection:Dropdown({ Title = "Run Animation", Values = runAnimNames, Default = nil, Callback = function(value) Config.AnimatorRunAnimName = value end })
+
+    local CustomizationSection = tab:Section({Title = "Customization", Opened = true})
+    CustomizationSection:Input({ Title = "Character Name", Default = "", Placeholder = "Enter name", Callback = function(value) Config.CharacterName = value; applyNametags(LocalPlayer.Character) end })
+    CustomizationSection:Input({ Title = "Rank", Default = "", Placeholder = "Enter rank", Callback = function(value) Config.CharacterRank = value; applyNametags(LocalPlayer.Character) end })
+    CustomizationSection:Colorpicker({ Title = "Nametag Color", Default = Config.TagColor, Callback = function(value) Config.TagColor = value; applyNametags(LocalPlayer.Character) end })
+    CustomizationSection:Dropdown({ Title = "Team", Values = {"Menlo", "RIF", "RSU"}, Default = "Menlo", Callback = function(value) Config.Team = value; changeTeam(value) end })
+end
+
+do
+    local tab = Tabs.Combat
+    
+    local WeaponActionsSection = tab:Section({Title = "Fists Settings", Opened = true})
+    WeaponActionsSection:Toggle({ Title = "Enable G-Key Attack", Default = true, Callback = function(v) Config.GAttackEnabled = v end })
+    WeaponActionsSection:Toggle({ Title = "Bypass Client Cooldowns", Default = false, Callback = function(v) Config.BypassCombatCooldowns = v end })
+    WeaponActionsSection:Toggle({ Title = "Auto-Spam Attack", Default = false, Callback = function(v) Config.AutoSpamAttack = v end })
+
+    local GunModsSection = tab:Section({Title = "Gun Mod", Opened = true})
+    GunModsSection:Toggle({ Title = "No Recoil [ALPHA]", Default = false, Callback = function(v) Config.AntiCamShake = v end })
+    GunModsSection:Toggle({ Title = "Hitbox Expander", Default = false, Callback = function(v)
+        HitboxEnabled = v
+        UpdateAllHitboxes(HitboxEnabled)
+    end })
+    GunModsSection:Toggle({ Title = "Silencer", Default = false, Callback = function(v) Config.SilencerEnabled = v; updateSilencers(v) end })
+
+    local ShieldRemoverSection = tab:Section({Title = "Shield Remover", Opened = true})
+    ShieldRemoverSection:Button({ Title = "Delete All Shields", Callback = function()
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj.Name == "Shield" then obj:Destroy() end
+        end
+    end })
+    ShieldRemoverSection:Toggle({ Title = "Auto-Remove Shields", Default = false, Callback = function(v)
+        AutoShieldRemovalActive = v
+        if v then
+            for _, obj in ipairs(workspace:GetDescendants()) do
+                if obj.Name == "Shield" then obj:Destroy() end
+            end
+            if not AutoShieldRemovalConnection then
+                AutoShieldRemovalConnection = workspace.DescendantAdded:Connect(function(desc)
+                    if AutoShieldRemovalActive then
+                        task.wait(0.1)
+                        if desc.Name == "Shield" then desc:Destroy() end
+                        for _, shield in ipairs(desc:GetDescendants()) do
+                            if shield.Name == "Shield" then shield:Destroy() end
+                        end
+                    end
+                end)
+            end
+        else
+            if AutoShieldRemovalConnection then
+                AutoShieldRemovalConnection:Disconnect()
+                AutoShieldRemovalConnection = nil
+            end
+        end
+    end })
+end
+
+do
+    local tab = Tabs.World
+    
+    local TeleportSection = tab:Section({Title = "Teleport", Opened = true})
+    for sectorName, points in pairs(teleportPoints) do
+        local optionNames = {}
+        local positionMapping = {}
+        for _, data in ipairs(points) do
+            local locationName, coords = unpack(data)
+            table.insert(optionNames, locationName)
+            positionMapping[locationName] = coords
+        end
+        TeleportSection:Dropdown({ Title = sectorName, Values = optionNames, Default = optionNames[1], Callback = function(selectedValue)
+            local targetPosition = positionMapping[selectedValue]
+            if targetPosition then
+                teleportTo(targetPosition)
+            end
+        end })
+    end
+
+    local XraySection = tab:Section({Title = "Xray Settings [BETA]", Opened = true})
+    XraySection:Toggle({ Title = "Enable X-Ray", Default = false, Callback = function(v) XrayEnabled = v; updateXray() end })
+    XraySection:Slider({ Title = "Distance", Value = {Min = 1, Max = 1000, Default = 30}, Rounding = 0, Enabled = true, Callback = function(v) XrayDistance = v; if XrayEnabled then updateXray() end end })
+    XraySection:Slider({ Title = "Transparency", Value = {Min = 0, Max = 1, Default = 0.3}, Rounding = 2, Enabled = true, Callback = function(v) XrayTransparency = v; updateXrayMaterialAndTransparency(); if XrayEnabled then updateXray() end end })
+    XraySection:Dropdown({ Title = "Material", Values = {"Plastic", "Neon", "ForceField", "Glass", "SmoothPlastic"}, Default = "ForceField", Callback = function(v)
+        Config.XrayMaterial = v
+        local materialMap = {
+            Plastic = Enum.Material.Plastic,
+            Neon = Enum.Material.Neon,
+            ForceField = Enum.Material.ForceField,
+            Glass = Enum.Material.Glass,
+            SmoothPlastic = Enum.Material.SmoothPlastic
+        }
+        XrayMaterial = materialMap[v] or Enum.Material.ForceField
+        updateXrayMaterialAndTransparency()
+        if XrayEnabled then updateXray() end
+    end })
+
+    local CameraSection = tab:Section({Title = "Camera Settings", Opened = true})
+    CameraSection:Toggle({ Title = "Unlock Third Person (Zoomable)", Default = false, Callback = function(v) Config.UnlockThirdPerson = v end })
+    CameraSection:Toggle({ Title = "Custom FOV", Default = false, Callback = function(v) Config.CustomFOVEnabled = v end })
+    CameraSection:Slider({ Title = "Field of View", Value = {Min = 1, Max = 120, Default = 70}, Rounding = 0, Enabled = true, Callback = function(v) Config.FOVValue = v end })
+
+    local AtmosphereSection = tab:Section({Title = "Atmosphere", Opened = true})
+    AtmosphereSection:Toggle({ Title = "Full Bright", Default = false, Callback = function(v)
+        Config.FullBright = v
+        if v then
+            Lighting.Ambient = Color3.fromRGB(255, 255, 255)
+            Lighting.Brightness = 2
+        else
+            Lighting.Ambient = OrigAmbient
+            Lighting.Brightness = OrigBrightness
+        end
+    end })
+    AtmosphereSection:Toggle({ Title = "No Fog", Default = false, Callback = function(v)
+        Config.NoFog = v
+        if v then
+            Lighting.FogEnd = 999999999
+            Lighting.FogStart = 999999999
+        else
+            Lighting.FogEnd = OrigFogEnd
+            Lighting.FogStart = OrigFogStart
+        end
+    end })
+
+    local RadiationsSection = tab:Section({Title = "Radiations", Opened = true})
+    RadiationsSection:Toggle({ Title = "Anti-Radiation Effect", Default = false, Callback = function(v) Config.ImmuneLookHazard = v end })
+    RadiationsSection:Button({ Title = "Remove Elephant Foot (LookAtMe)", Callback = removeElephantFoot })
+
+    local VisualMechanicsSection = tab:Section({Title = "Screen Customization", Opened = true})
+    VisualMechanicsSection:Toggle({ Title = "Auto-Wipe Screen Blood", Default = false, Callback = function(v) Config.AutoWipeBlood = v end })
+    VisualMechanicsSection:Button({ Title = "Instant Clean Screen", Callback = function()
+        local gui = LocalPlayer.PlayerGui:FindFirstChild("Gui")
+        if gui then
+            for _, v in pairs(gui:GetChildren()) do
+                if v.Name == "blood" then
+                    v.Name = "clean"
+                    TweenService:Create(v, TweenInfo.new(0.2), { ImageTransparency = 1 }):Play()
+                    Debris:AddItem(v, 0.5)
+                end
+            end
+        end
+    end })
+
+    local WorldNVGSection = tab:Section({Title = "Night Vision & Gasmask", Opened = true})
+    WorldNVGSection:Button({ Title = "Delete Gasmask", Callback = function()
+        local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+        if playerGui then
+            local gasmaskGui = playerGui:FindFirstChild("Gasmask")
+            if gasmaskGui then gasmaskGui:Destroy() end
+        end
+    end })
+    WorldNVGSection:Button({ Title = "Break Gasmask", Callback = BreakGasmask })
+    WorldNVGSection:Toggle({ Title = "Infinite Night Vision", Default = false, Callback = function(v)
+        Config.InfiniteNightVision = v
+        if v then
+            if InfiniteNVConnection then InfiniteNVConnection:Disconnect() end
+            if NVForcerConnection then NVForcerConnection:Disconnect() end
+            InfiniteNVConnection = RunService.Heartbeat:Connect(function()
+                if not Config.InfiniteNightVision then return end
+                local nvEffect = Lighting:FindFirstChild("__NVG_Effect")
+                if nvEffect and nvEffect.Enabled then
+                    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+                    if playerGui then
+                        local nvHUD = playerGui:FindFirstChild("NightVisionHUD")
+                        if nvHUD and nvHUD:FindFirstChild("Container") then
+                            local container = nvHUD.Container
+                            local status = container:FindFirstChild("Status")
+                            if status then
+                                local batteryFrame = status:FindFirstChild("Battery")
+                                if batteryFrame then
+                                    local bar = batteryFrame:FindFirstChild("Bar")
+                                    local percentage = batteryFrame:FindFirstChild("Percentage")
+                                    if bar and percentage then
+                                        bar.Size = UDim2.new(1, 0, bar.Size.Y.Scale, bar.Size.Y.Offset)
+                                        percentage.Text = "100%"
+                                    end
+                                end
+                                local warnings = status:FindFirstChild("Warnings")
+                                if warnings then
+                                    local lowPower = warnings:FindFirstChild("LowPower")
+                                    if lowPower then lowPower.Visible = false end
+                                end
+                            end
+                        end
+                    end
+                end
+            end)
+            NVForcerConnection = RunService.Stepped:Connect(function()
+                if not Config.InfiniteNightVision then return end
+                local char = LocalPlayer.Character
+                if not char then return end
+                local hum = char:FindFirstChildOfClass("Humanoid")
+                if not hum or hum.Health <= 0 then return end
+                local nvEffect = Lighting:FindFirstChild("__NVG_Effect")
+                local nvBloom = Lighting:FindFirstChild("__NVG_Bloom")
+                local nvLight = char:FindFirstChild("__NVG_Light")
+                local headLight = char:FindFirstChild("Head") and char.Head:FindFirstChildOfClass("PointLight")
+                if nvEffect and not nvEffect.Enabled then nvEffect.Enabled = true end
+                if nvBloom and not nvBloom.Enabled then nvBloom.Enabled = true end
+                if nvLight and not nvLight.Enabled then nvLight.Enabled = true end
+                if headLight and not headLight.Enabled then headLight.Enabled = true end
+                Lighting.Ambient = Color3.fromRGB(180, 180, 180)
+                Lighting.OutdoorAmbient = Color3.fromRGB(180, 180, 180)
+                Lighting.Brightness = 2
+                Lighting.FogEnd = 999999999
+                Lighting.FogStart = 999999999
+                local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+                if playerGui then
+                    local nvHUD = playerGui:FindFirstChild("NightVisionHUD")
+                    if nvHUD and not nvHUD.Enabled then nvHUD.Enabled = true end
+                    if nvHUD and nvHUD:FindFirstChild("Container") then
+                        local container = nvHUD.Container
+                        local status = container:FindFirstChild("Status")
+                        if status then
+                            local quality = status:FindFirstChild("Quality")
+                            if quality then
+                                local textLabel = quality:FindFirstChildOfClass("TextLabel")
+                                if textLabel and textLabel.Text ~= "QUALITY: IDEAL" then
+                                    textLabel.Text = "QUALITY: IDEAL"
+                                    textLabel.TextColor3 = Color3.fromRGB(120, 255, 120)
+                                end
+                            end
+                        end
+                    end
+                end
+            end)
+        else
+            if InfiniteNVConnection then InfiniteNVConnection:Disconnect() end
+            if NVForcerConnection then NVForcerConnection:Disconnect() end
+            Lighting.Ambient = OrigAmbient
+            Lighting.OutdoorAmbient = OrigOutdoorAmbient
+            Lighting.Brightness = OrigBrightness
+            Lighting.FogEnd = OrigFogEnd
+            Lighting.FogStart = OrigFogStart
+            local nvEffect = Lighting:FindFirstChild("__NVG_Effect")
+            if nvEffect then nvEffect.Enabled = false end
+            local nvBloom = Lighting:FindFirstChild("__NVG_Bloom")
+            if nvBloom then nvBloom.Enabled = false end
+            local char = LocalPlayer.Character
+            if char then
+                local nvLight = char:FindFirstChild("__NVG_Light")
+                if nvLight then nvLight.Enabled = false end
+                local head = char:FindFirstChild("Head")
+                if head then
+                    local headLight = head:FindFirstChildOfClass("PointLight")
+                    if headLight then headLight.Enabled = false end
+                end
+            end
+            local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+            if playerGui then
+                local nvHUD = playerGui:FindFirstChild("NightVisionHUD")
+                if nvHUD then nvHUD.Enabled = false end
+            end
+        end
+    end })
+
+    local MapRemoverSection = tab:Section({Title = "Map Remover", Opened = true})
+    MapRemoverSection:Button({ Title = "Remove Arabic dud", Callback = removeArabicDud })
+    MapRemoverSection:Button({ Title = "Remove Lobby Music", Callback = removeLobbyMusic })
+    MapRemoverSection:Button({ Title = "Delete ALL doors", Callback = deleteAllDoors })
+end
+
+do
+    local tab = Tabs.Fun
+    local ToggleAnimSection = tab:Section({Title = "Idle Animations (Toggles)", Opened = true})
+    for name, id in pairs(toggleAnims) do
+        ToggleAnimSection:Toggle({ Title = name, Default = false, Callback = function(v) playToggleAnim(id, v) end })
+    end
+
+    local ButtonAnimSection = tab:Section({Title = "One-Shot Animations (Buttons)", Opened = true})
+    for name, id in pairs(buttonAnims) do
+        ButtonAnimSection:Button({ Title = name, Callback = function() playButtonAnim(id) end })
+    end
+end
+
+do
+    local tab = Tabs.ESP
+    
+    local GlobalESPSection = tab:Section({Title = "ESP Settings", Opened = true})
+    GlobalESPSection:Slider({ Title = "Max ESP Distance", Value = {Min = 0, Max = 1000, Default = 250}, Rounding = 0, Enabled = true, Callback = function(v) Config.MaxDistance = v end })
+    GlobalESPSection:Slider({ Title = "Highlight Fill Transparency", Value = {Min = 0, Max = 1, Default = 0.7}, Rounding = 1, Enabled = true, Callback = function(v) Config.HLFillTrans = v end })
+    GlobalESPSection:Slider({ Title = "Highlight Outline Transparency", Value = {Min = 0, Max = 1, Default = 1.0}, Rounding = 1, Enabled = true, Callback = function(v) Config.HLOutlineTrans = v end })
+
+    local PlayerESPSection = tab:Section({Title = "Player ESP", Opened = true})
+    PlayerESPSection:Toggle({ Title = "Highlight Player", Default = false, Callback = function(v) Config.HighlightPlayer = v end })
+    PlayerESPSection:Toggle({ Title = "ESP Health Player", Default = false, Callback = function(v) Config.HealthPlayer = v end })
+    PlayerESPSection:Toggle({ Title = "Tracer Player", Default = false, Callback = function(v) Config.TracerPlayer = v end })
+    PlayerESPSection:Colorpicker({ Title = "Player ESP Color", Default = Config.ColorPlayer, Callback = function(v) Config.ColorPlayer = v end })
+
+    local FriendESPSection = tab:Section({Title = "Friend ESP [ALPHA]", Opened = true})
+    FriendESPSection:Toggle({ Title = "Highlight Friends", Default = false, Callback = function(v) Config.HighlightFriends = v end })
+    FriendESPSection:Toggle({ Title = "ESP Health Friend", Default = false, Callback = function(v) Config.HealthFriends = v end })
+    FriendESPSection:Toggle({ Title = "Tracer Friend", Default = false, Callback = function(v) Config.TracerFriends = v end })
+    FriendESPSection:Colorpicker({ Title = "Friend ESP Color", Default = Config.ColorFriends, Callback = function(v) Config.ColorFriends = v end })
+
+    local MobESPSection = tab:Section({Title = "Entities ESP", Opened = true})
+    MobESPSection:Toggle({ Title = "Highlight Entities", Default = false, Callback = function(v) Config.HighlightMobs = v end })
+    MobESPSection:Toggle({ Title = "ESP Health EntitiesMobs", Default = false, Callback = function(v) Config.HealthMobs = v end })
+    MobESPSection:Toggle({ Title = "Tracer Entities", Default = false, Callback = function(v) Config.TracerMobs = v end })
+    MobESPSection:Colorpicker({ Title = "Entities ESP Color", Default = Config.ColorMobs, Callback = function(v) Config.ColorMobs = v end })
+
+    local OtherESPSection = tab:Section({Title = "Other ESP", Opened = true})
+    OtherESPSection:Toggle({ Title = "Highlight Landmines", Default = false, Callback = function(v)
+        Config.HighlightLandmines = v
+        if not v then
+            for _, hl in pairs(LandmineHighlights) do
+                if hl and hl.Parent then hl:Destroy() end
+            end
+            table.clear(LandmineHighlights)
+        end
+    end })
+    OtherESPSection:Colorpicker({ Title = "Landmines Color", Default = Config.ColorLandmines, Callback = function(v)
+        Config.ColorLandmines = v
+        for _, hl in pairs(LandmineHighlights) do
+            if hl then hl.FillColor = v end
+        end
+    end })
+    OtherESPSection:Toggle({ Title = "Highlight Generators", Default = false, Callback = function(v)
+        Config.HighlightGenerators = v
+        if not v then
+            for _, hl in pairs(GeneratorHighlights) do
+                if hl and hl.Parent then hl:Destroy() end
+            end
+            table.clear(GeneratorHighlights)
+        end
+    end })
+    OtherESPSection:Colorpicker({ Title = "Generators Color", Default = Config.ColorGenerators, Callback = function(v)
+        Config.ColorGenerators = v
+        for _, hl in pairs(GeneratorHighlights) do
+            if hl then hl.FillColor = v end
+        end
+    end })
+end
+
+do
+    local tab = Tabs.Game
+    
+    local TeleportationsSection = tab:Section({Title = "Teleportations", Opened = true})
+    TeleportationsSection:Button({ Title = "Get Underequipped badge", Callback = function()
+        local char = LocalPlayer.Character
+        if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+        local hrp = char.HumanoidRootPart
+
+        local ZoneParts = Workspace:FindFirstChild("ZoneParts")
+        if not ZoneParts then
+            pcall(function() if WindUI then WindUI:Notify({ Title = "Error", Content = "ZoneParts not found", Duration = 3 }) end end)
+            return
+        end
+
+        local inSector = false
+        for _, v in ipairs(ZoneParts:GetChildren()) do
+            if v:IsA("BasePart") then
+                local p = v.CFrame:PointToObjectSpace(hrp.Position)
+                local s = v.Size * 0.5
+                if math.abs(p.X) <= s.X and math.abs(p.Y) <= s.Y and math.abs(p.Z) <= s.Z then
+                    inSector = true
+                    break
+                end
+            end
+        end
+
+        if not inSector then
+            pcall(function() if WindUI then WindUI:Notify({ Title = "Error", Content = "You are not in a sector.", Duration = 3 }) end end)
+            return
+        end
+
+        local backpack = LocalPlayer:FindFirstChild("Backpack")
+        if backpack and #backpack:GetChildren() > 5 then
+            pcall(function() if WindUI then WindUI:Notify({ Title = "Error", Content = "You are not classless (too many tools).", Duration = 3 }) end end)
+            return
+        end
+
+        local o = workspace:FindFirstChild("Classless_Badge")
+        if o then
+            char:PivotTo(o:GetPivot() * CFrame.new(0, 2, 0))
+        else
+            pcall(function() if WindUI then WindUI:Notify({ Title = "Error", Content = "Classless_Badge not found", Duration = 3 }) end end)
+        end
+    end })
+    TeleportationsSection:Button({ Title = "Go to Restricted Server", Callback = function()
+        local screenGui = Instance.new("ScreenGui")
+        screenGui.Name = "SentinelRestrictedOverlay"
+        screenGui.Parent = CoreGui
+        screenGui.IgnoreGuiInset = true
+
+        local blackFrame = Instance.new("Frame")
+        blackFrame.Size = UDim2.new(1, 0, 1, 0)
+        blackFrame.BackgroundColor3 = Color3.new(0, 0, 0)
+        blackFrame.BorderSizePixel = 0
+        blackFrame.Parent = screenGui
+
+        local textLabel = Instance.new("TextLabel")
+        textLabel.Size = UDim2.new(1, 0, 0.2, 0)
+        textLabel.Position = UDim2.new(0, 0, 0.4, 0)
+        textLabel.BackgroundTransparency = 1
+        textLabel.Text = "Sentinel is teleporting you to a restricted server..."
+        textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        textLabel.Font = Enum.Font.GothamBold
+        textLabel.TextSize = 24
+        textLabel.TextStrokeTransparency = 0.5
+        textLabel.Parent = screenGui
+
+        local particles = {}
+        for i = 1, 20 do
+            local part = Instance.new("Frame")
+            part.Size = UDim2.new(0, 4, 0, 4)
+            part.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+            part.BackgroundTransparency = 0.5
+            part.Position = UDim2.new(math.random(), 0, math.random(), 0)
+            part.Parent = screenGui
+            table.insert(particles, part)
+
+            local targetY = math.random() * 0.3
+            local duration = math.random() * 2 + 1
+            local tween = TweenService:Create(part, TweenInfo.new(duration, Enum.EasingStyle.Linear), {
+                Position = UDim2.new(part.Position.X.Scale + math.random(-0.1, 0.1), 0, targetY, 0),
+                BackgroundTransparency = 1
+            })
+            tween:Play()
+            tween.Completed:Connect(function()
+                part:Destroy()
+            end)
+        end
+
+        teleportToCFrame(RestrictedServerCFrame)
+    end })
+
+    local UtilitiesSection = tab:Section({Title = "Utilities", Opened = true})
+    UtilitiesSection:Toggle({ Title = "Anti-AFK", Default = false, Callback = function(v) Config.AntiAFKEnabled = v end })
+    UtilitiesSection:Toggle({ Title = "Auto Remove Death Screen", Default = false, Callback = function(v)
+        Config.RemoveDeathScreen = v
+        if v then
+            local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+            if playerGui then
+                local death = playerGui:FindFirstChild("Death")
+                if death then death:Destroy() end
+                if not removeDeathConnection then
+                    removeDeathConnection = playerGui.ChildAdded:Connect(function(child)
+                        if child.Name == "Death" and Config.RemoveDeathScreen then
+                            child:Destroy()
+                        end
+                    end)
+                end
+            end
+        else
+            if removeDeathConnection then
+                removeDeathConnection:Disconnect()
+                removeDeathConnection = nil
+            end
+        end
+    end })
+
+    local CoreGUISection = tab:Section({Title = "CoreGUI", Opened = true})
+    local ChatLoggerEnabled = false
+    local function ToggleNativeChat(enable)
+        if enable then
+            if TextChatService and TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
+                local chatWindow = TextChatService:FindFirstChild("ChatWindowConfiguration")
+                if chatWindow then chatWindow.Enabled = true end
+                local ui = CoreGui:FindFirstChild("TextChat")
+                if ui then ui.Enabled = true end
+                pcall(function()
+                    TextChatService:FindFirstChild("ChatWindowParent"):FindFirstChild("ChatWindow").Visible = true
+                end)
+            else
+                local chatGui = LocalPlayer.PlayerGui:FindFirstChild("Chat")
+                if chatGui then chatGui.Enabled = true end
+                local legacy = CoreGui:FindFirstChild("Chat")
+                if legacy then legacy.Enabled = true end
+            end
+        else
+            if TextChatService and TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
+                local chatWindow = TextChatService:FindFirstChild("ChatWindowConfiguration")
+                if chatWindow then chatWindow.Enabled = false end
+                local ui = CoreGui:FindFirstChild("TextChat")
+                if ui then ui.Enabled = false end
+                pcall(function()
+                    TextChatService:FindFirstChild("ChatWindowParent"):FindFirstChild("ChatWindow").Visible = false
+                end)
+            else
+                local chatGui = LocalPlayer.PlayerGui:FindFirstChild("Chat")
+                if chatGui then chatGui.Enabled = false end
+                local legacy = CoreGui:FindFirstChild("Chat")
+                if legacy then legacy.Enabled = false end
+            end
+        end
+    end
+    CoreGUISection:Toggle({ Title = "Show Native Chat (CoreGui)", Default = false, Callback = function(v)
+        ChatLoggerEnabled = v
+        ToggleNativeChat(v)
+        if v then
+            pcall(function() if WindUI then WindUI:Notify({ Title = "Chat", Content = "Native chat interface enabled", Duration = 2 }) end end)
+        end
+    end })
+end
+
+do
+    local tab = Tabs.About
+    local AboutSection = tab:Section({Title = "Informations & Links", Opened = true})
+    AboutSection:Button({ Title = "Copy Discord Server Link", Callback = function()
+        local link = "https://discord.gg/hEzaXke2x"
+        if setclipboard then setclipboard(link)
+        else pcall(function() local tb = Instance.new("TextBox"); tb.Text = link; tb:CaptureFocus(); tb:ReleaseFocus(); tb:Destroy() end) end
+        pcall(function() if WindUI then WindUI:Notify({ Title = "Discord", Content = "Discord server link copied!", Duration = 3 }) end end)
+    end })
+    AboutSection:Button({ Title = "Copy Rscripts.net Link", Callback = function()
+        local link = "https://rscripts.net/script/examination-oBz7"
+        if setclipboard then setclipboard(link)
+        else pcall(function() local tb = Instance.new("TextBox"); tb.Text = link; tb:CaptureFocus(); tb:ReleaseFocus(); tb:Destroy() end) end
+        pcall(function() if WindUI then WindUI:Notify({ Title = "Rscripts.net", Content = "Rscript Link copied", Duration = 3 }) end end)
+    end })
+    AboutSection:Paragraph({ Title = "Credits", Content = "-------------\nv.07.00.10\n-------------\nMain dev : x4tmq\nUnderequipped badge : expresso5184\nTesters : Sinitzyn - Χρήστος - Flare\n-------------\nStatus : Safe - Stable" })
+    AboutSection:Paragraph({ Title = "Info", Content = "-------------\nv.07.00.10\n-------------\nIf the script don't work or some stuff bugs :\n- Restart ur exec\n- Restart roblox\n- And re execute this scrpt ! :D" })
+end
+
+do
+    local tab = Tabs.Settings
+    
+    local SettingsSection = tab:Section({Title = "Theme", Opened = true})
+    SettingsSection:Dropdown({ Title = "Choose a theme", Values = {"Light", "Dark", "Darker", "Rose", "Aqua", "Amethyst"}, Default = "Darker", Callback = function(Value)
+        Config.Theme = Value
+        pcall(function() WindUI:SetTheme(Value) end)
+    end })
+
+    local SaveSection = tab:Section({Title = "Save [v1]", Opened = true})
+    local saveNameInput = SaveSection:Input({ Title = "Config Name", Default = "", Placeholder = "Enter a name", Callback = function(value) end })
+    SaveSection:Button({ Title = "Save Settings", Callback = function()
+        local name = saveNameInput.Value
+        if name == "" then
+            pcall(function() if WindUI then WindUI:Notify({ Title = "Error", Content = "Please enter a name", Duration = 3 }) end end)
+            return
+        end
+        local success, err = pcall(function()
+            local configCopy = table.clone(Config)
+            local data = HttpService:JSONEncode(configCopy)
+            if not isfolder("sentinel/configs/") then
+                makefolder("sentinel/configs/")
+            end
+            writefile("sentinel/configs/" .. name .. ".json", data)
+        end)
+        if success then
+            pcall(function() if WindUI then WindUI:Notify({ Title = "Saved", Content = "Settings saved as " .. name, Duration = 3 }) end end)
+        else
+            pcall(function() if WindUI then WindUI:Notify({ Title = "Error", Content = "Failed to save: " .. err, Duration = 3 }) end end)
+        end
+    end })
+
+    local LoadSection = tab:Section({Title = "Load Settings", Opened = true})
+    local configList = {}
+    local function refreshConfigList()
+        configList = {}
+        if isfolder("sentinel/configs/") then
+            local files = listfiles("sentinel/configs/")
+            for _, file in ipairs(files) do
+                local name = file:match("([^/\\]+)%.json$")
+                if name then
+                    table.insert(configList, name)
+                end
+            end
+        end
+        return configList
+    end
+    local loadDropdown = LoadSection:Dropdown({ Title = "Select Config", Values = refreshConfigList(), Default = nil, Callback = function(selected)
+        if selected then
+            local success, err = pcall(function()
+                local data = readfile("sentinel/configs/" .. selected .. ".json")
+                local loaded = HttpService:JSONDecode(data)
+                for k, v in pairs(loaded) do
+                    Config[k] = v
+                end
+                if loaded.Theme then
+                    pcall(function() WindUI:SetTheme(loaded.Theme) end)
+                end
+                pcall(function() if WindUI then WindUI:Notify({ Title = "Loaded", Content = "Config loaded: " .. selected, Duration = 3 }) end end)
+            end)
+            if not success then
+                pcall(function() if WindUI then WindUI:Notify({ Title = "Error", Content = "Failed to load: " .. err, Duration = 3 }) end end)
+            end
+        end
+    end })
+    LoadSection:Button({ Title = "Refresh List", Callback = function()
+        local newList = refreshConfigList()
+        loadDropdown:SetOptions(newList)
+        pcall(function() if WindUI then WindUI:Notify({ Title = "Refreshed", Content = "Config list updated", Duration = 2 }) end end)
+    end })
+
+    local DeleteSection = tab:Section({Title = "Delete Config", Opened = true})
+    local deleteConfigList = {}
+    local function refreshDeleteConfigList()
+        deleteConfigList = {}
+        if isfolder("sentinel/configs/") then
+            local files = listfiles("sentinel/configs/")
+            for _, file in ipairs(files) do
+                local name = file:match("([^/\\]+)%.json$")
+                if name then
+                    table.insert(deleteConfigList, name)
+                end
+            end
+        end
+        return deleteConfigList
+    end
+    local deleteDropdown = DeleteSection:Dropdown({ Title = "Select Config to Delete", Values = refreshDeleteConfigList(), Default = nil, Callback = function(selected) end })
+    DeleteSection:Button({ Title = "Delete Selected Config", Callback = function()
+        local selected = deleteDropdown.Value
+        if selected == nil or selected == "" then
+            pcall(function() if WindUI then WindUI:Notify({ Title = "Error", Content = "No config selected", Duration = 3 }) end end)
+            return
+        end
+        local filePath = "sentinel/configs/" .. selected .. ".json"
+        if isfile(filePath) then
+            delfile(filePath)
+            pcall(function() if WindUI then WindUI:Notify({ Title = "Deleted", Content = "Config deleted: " .. selected, Duration = 3 }) end end)
+            local newList = refreshConfigList()
+            loadDropdown:SetOptions(newList)
+            loadDropdown:Set(nil)
+            local newDeleteList = refreshDeleteConfigList()
+            deleteDropdown:SetOptions(newDeleteList)
+            deleteDropdown:Set(nil)
+        else
+            pcall(function() if WindUI then WindUI:Notify({ Title = "Error", Content = "Config file not found", Duration = 3 }) end end)
+        end
+    end })
+    DeleteSection:Button({ Title = "Refresh Delete List", Callback = function()
+        local newList = refreshDeleteConfigList()
+        deleteDropdown:SetOptions(newList)
+        pcall(function() if WindUI then WindUI:Notify({ Title = "Refreshed", Content = "Delete list updated", Duration = 2 }) end end)
+    end })
+end
+
+do
+    local tab = Tabs.Dev
+    local devSection = tab:Section({Title = "4 dev", Opened = true})
+    devSection:Button({ Title = "Infinite Yield", Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source"))() end })
+    devSection:Button({ Title = "Dex Explorer V2", Callback = function() loadstring(game:HttpGet("https://github.com/AZYsGithub/DexPlusPlus/releases/latest/download/out.lua"))() end })
+    devSection:Button({ Title = "Invisible", Callback = function() loadstring(game:HttpGet('https://pastebin.com/raw/3Rnd9rHf'))() end })
+end
+
+RunService.Heartbeat:Connect(function(dt)
+    applyAnimatorState()
+end)
+
+LocalPlayer.CharacterAdded:Connect(function()
+    if InfectionActive then
+        stopInfection()
+    end
+    InfectionActive = false
+    infectionIsRunning = false
+    canInfect = true
+    if Config.RemoveDeathScreen and not removeDeathConnection then
+        local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+        if playerGui then
+            removeDeathConnection = playerGui.ChildAdded:Connect(function(child)
+                if child.Name == "Death" and Config.RemoveDeathScreen then
+                    child:Destroy()
+                end
+            end)
+        end
+    end
+end)
+
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        if Config.GodmodeEnabled then
+            local char = LocalPlayer.Character
+            if char then
+                local humanoid = char:FindFirstChildOfClass("Humanoid")
+                if humanoid and humanoid.Health <= Config.GodmodeHealthThreshold then
+                    if not GodmodeTeleported then
+                        local hrp = char:FindFirstChild("HumanoidRootPart")
+                        if hrp then
+                            GodmodePreviousPosition = hrp.CFrame
+                            char:PivotTo(CFrame.new(0, 5, 0))
+                            GodmodeTeleported = true
+                            pcall(function() if WindUI then WindUI:Notify({ Title = "Godmode", Content = "Teleported to baseplate (health low)", Duration = 2 }) end end)
+                        end
+                    end
+                end
+            end
+        end
+    end
+end)
+
+task.spawn(function()
+    while true do
+        task.wait(1.5)
+        if Config.HighlightLandmines then
+            for obj, hl in pairs(LandmineHighlights) do
+                if not obj.Parent then
+                    hl:Destroy()
+                    LandmineHighlights[obj] = nil
+                end
+            end
+            for _, obj in ipairs(workspace:GetDescendants()) do
+                if obj:IsA("Model") and obj.Name == "Landmine" and not LandmineHighlights[obj] then
+                    local hl = Instance.new("Highlight")
+                    hl.Name = "SentinelLandmineHL"
+                    hl.FillColor = Config.ColorLandmines
+                    hl.FillTransparency = 0.5
+                    hl.OutlineTransparency = 0.5
+                    hl.Parent = obj
+                    LandmineHighlights[obj] = hl
+                end
+            end
+        else
+            for obj, hl in pairs(LandmineHighlights) do
+                hl:Destroy()
+                LandmineHighlights[obj] = nil
+            end
+        end
+    end
+end)
+
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        if Config.HighlightGenerators then
+            local gameDoors = workspace:FindFirstChild("GameDoors")
+            if gameDoors then
+                for _, gen in ipairs(gameDoors:GetChildren()) do
+                    if gen.Name:match("Generator%d") then
+                        local generator = gen:FindFirstChild("Generator")
+                        if generator and generator:IsA("Model") and not GeneratorHighlights[generator] then
+                            local hl = Instance.new("Highlight")
+                            hl.Name = "SentinelGeneratorHL"
+                            hl.FillColor = Config.ColorGenerators
+                            hl.FillTransparency = 0.4
+                            hl.OutlineTransparency = 0.4
+                            hl.Parent = generator
+                            GeneratorHighlights[generator] = hl
+                        end
+                    end
+                end
+            end
+            for obj, hl in pairs(GeneratorHighlights) do
+                if not obj.Parent then
+                    hl:Destroy()
+                    GeneratorHighlights[obj] = nil
+                end
+            end
+        else
+            for obj, hl in pairs(GeneratorHighlights) do
+                hl:Destroy()
+                GeneratorHighlights[obj] = nil
+            end
+        end
+    end
+end)
+
+RunService.RenderStepped:Connect(function()
+    if Config.UnlockThirdPerson then
+        if LocalPlayer.CameraMode ~= Enum.CameraMode.Classic then
+            LocalPlayer.CameraMode = Enum.CameraMode.Classic
+        end
+        if LocalPlayer.CameraMaxZoomDistance < 999 then
+            LocalPlayer.CameraMaxZoomDistance = 999
+        end
+    else
+        if LocalPlayer.CameraMode ~= Enum.CameraMode.LockFirstPerson then
+            LocalPlayer.CameraMode = Enum.CameraMode.LockFirstPerson
+        end
+        if LocalPlayer.CameraMaxZoomDistance > 50 then
+            LocalPlayer.CameraMaxZoomDistance = 50
+        end
+    end
+
+    local myChar = LocalPlayer.Character
+    local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    if not myHrp then return end
+
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local char = player.Character
+            local phrp = char and char:FindFirstChild("HumanoidRootPart")
+            local phum = char and char:FindFirstChildOfClass("Humanoid")
+            if phrp and phum then
+                local distance = (myHrp.Position - phrp.Position).Magnitude
+                local isFriend = LocalPlayer:IsFriendsWith(player.UserId)
+                local hlToggle = isFriend and Config.HighlightFriends or Config.HighlightPlayer
+                local hpToggle = isFriend and Config.HealthFriends or Config.HealthPlayer
+                local trToggle = isFriend and Config.TracerFriends or Config.TracerPlayer
+                local color = isFriend and Config.ColorFriends or Config.ColorPlayer
+                if distance <= Config.MaxDistance then
+                    local hl = char:FindFirstChild("SentinelHL")
+                    if hlToggle then
+                        if not hl then
+                            hl = Instance.new("Highlight", char)
+                            hl.Name = "SentinelHL"
+                        end
+                        hl.FillColor = color
+                        hl.FillTransparency = Config.HLFillTrans
+                        hl.OutlineTransparency = Config.HLOutlineTrans
+                    elseif hl then hl:Destroy() end
+                    local bgui = phrp:FindFirstChild("SentinelHP")
+                    if hpToggle then
+                        if not bgui then
+                            bgui = Instance.new("BillboardGui", phrp)
+                            bgui.Name = "SentinelHP"
+                            bgui.Size = UDim2.new(0, 150, 0, 30)
+                            bgui.AlwaysOnTop = true
+                            bgui.StudsOffset = Vector3.new(0, 3, 0)
+                            local text = Instance.new("TextLabel", bgui)
+                            text.Size = UDim2.new(1, 0, 1, 0)
+                            text.BackgroundTransparency = 1
+                            text.TextStrokeTransparency = 0
+                            text.Font = Enum.Font.SourceSansBold
+                            text.TextSize = 13
+                        end
+                        if bgui and bgui.TextLabel then
+                            bgui.TextLabel.TextColor3 = color
+                            bgui.TextLabel.Text = string.format("%s [%d HP]", player.Name, math.round(phum.Health))
+                        end
+                    elseif bgui then bgui:Destroy() end
+                    local line = getTracer(player.UserId)
+                    if line then
+                        if trToggle then
+                            local vector, onScreen = Camera:WorldToViewportPoint(phrp.Position)
+                            if onScreen then
+                                line.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+                                line.To = Vector2.new(vector.X, vector.Y)
+                                line.Color = color
+                                line.Visible = true
+                            else
+                                line.Visible = false
+                            end
+                        else
+                            line.Visible = false
+                        end
+                    end
+                else
+                    if char:FindFirstChild("SentinelHL") then char.SentinelHL:Destroy() end
+                    if phrp:FindFirstChild("SentinelHP") then phrp.SentinelHP:Destroy() end
+                    local line = tracerCache[player.UserId]
+                    if line then line.Visible = false end
+                end
+            end
+        end
+    end
+
+    for i = #CachedMobs, 1, -1 do
+        local obj = CachedMobs[i]
+        if obj and obj.Parent then
+            if obj == myChar or obj == LocalPlayer.Character or obj.Name == LocalPlayer.Name or Players:GetPlayerFromCharacter(obj) then
+                if obj:FindFirstChild("SentinelMobHL") then obj.SentinelMobHL:Destroy() end
+                local badHrp = obj:FindFirstChild("HumanoidRootPart")
+                if badHrp and badHrp:FindFirstChild("SentinelMobHP") then badHrp.SentinelMobHP:Destroy() end
+                local badId = obj:GetDebugId()
+                if tracerCache[badId] then tracerCache[badId].Visible = false end
+                table.remove(CachedMobs, i)
+                continue
+            end
+            local mhrp = obj:FindFirstChild("HumanoidRootPart")
+            local mhum = obj:FindFirstChildOfClass("Humanoid")
+            if mhrp and mhum then
+                local distance = (myHrp.Position - mhrp.Position).Magnitude
+                local mobId = obj:GetDebugId()
+                if distance <= Config.MaxDistance and mhum.Health > 0 then
+                    local hl = obj:FindFirstChild("SentinelMobHL")
+                    if Config.HighlightMobs then
+                        if not hl then
+                            hl = Instance.new("Highlight", obj)
+                            hl.Name = "SentinelMobHL"
+                        end
+                        hl.FillColor = Config.ColorMobs
+                        hl.FillTransparency = Config.HLFillTrans
+                        hl.OutlineTransparency = Config.HLOutlineTrans
+                    elseif hl then hl:Destroy() end
+                    local bgui = mhrp:FindFirstChild("SentinelMobHP")
+                    if Config.HealthMobs then
+                        if not bgui then
+                            bgui = Instance.new("BillboardGui", mhrp)
+                            bgui.Name = "SentinelMobHP"
+                            bgui.Size = UDim2.new(0, 150, 0, 30)
+                            bgui.AlwaysOnTop = true
+                            bgui.StudsOffset = Vector3.new(0, 3, 0)
+                            local text = Instance.new("TextLabel", bgui)
+                            text.Size = UDim2.new(1, 0, 1, 0)
+                            text.BackgroundTransparency = 1
+                            text.TextStrokeTransparency = 0
+                            text.Font = Enum.Font.SourceSansBold
+                            text.TextSize = 13
+                        end
+                        if bgui and bgui.TextLabel then
+                            bgui.TextLabel.TextColor3 = Config.ColorMobs
+                            bgui.TextLabel.Text = string.format("%s [%d HP]", obj.Name, math.round(mhum.Health))
+                        end
+                    elseif bgui then bgui:Destroy() end
+                    local line = getTracer(mobId)
+                    if line then
+                        if Config.TracerMobs then
+                            local vector, onScreen = Camera:WorldToViewportPoint(mhrp.Position)
+                            if onScreen then
+                                line.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+                                line.To = Vector2.new(vector.X, vector.Y)
+                                line.Color = Config.ColorMobs
+                                line.Visible = true
+                            else
+                                line.Visible = false
+                            end
+                        else
+                            line.Visible = false
+                        end
+                    end
+                else
+                    if obj:FindFirstChild("SentinelMobHL") then obj.SentinelMobHL:Destroy() end
+                    if mhrp and mhrp:FindFirstChild("SentinelMobHP") then mhrp.SentinelMobHP:Destroy() end
+                    local line = tracerCache[mobId]
+                    if line then line.Visible = false end
+                end
+            end
+        else
+            table.remove(CachedMobs, i)
+        end
+    end
+end)
+
+local firstHide = true
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.K and Window then
+        if not Window.Visible and firstHide then
+            firstHide = false
+            pcall(function()
+                if WindUI then
+                    WindUI:Notify({
+                        Title = "Keybind",
+                        Content = "Press K to toggle interface",
+                        Duration = 3
+                    })
+                end
+            end)
+        end
+    end
+end)
+
+if Window and WindUI then
+    pcall(function()
+        Window:SelectTab(1)
+    end)
+    pcall(function()
+        WindUI:Notify({ Title = "News", Content = "v8 soon...", Duration = 5 })
+    end)
+    pcall(function()
+        WindUI:Notify({ Title = "Sentinel v7.00.10", Content = "Script Loaded. Enjoy :D", Duration = 5 })
+    end)
+else
+    game:GetService("StarterGui"):SetCore("SendNotification", {
+        Title = "Error",
+        Text = "Window or WindUI is nil. Check console for details.",
+        Duration = 10
+    })
+end
