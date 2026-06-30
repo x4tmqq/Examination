@@ -16,8 +16,6 @@ local VirtualInputManager = game:GetService("VirtualInputManager")
 local StarterGui = game:GetService("StarterGui")
 local HttpService = game:GetService("HttpService")
 
-local UIComponents = {}
-
 local function isPlayerCharacter(model)
     if not model or not model:IsA("Model") then return false end
     return Players:GetPlayerFromCharacter(model) ~= nil
@@ -118,6 +116,21 @@ local Config = {
     Theme = "Darker",
     XrayMaterial = "ForceField",
     XrayTransparency = 0.3,
+    -- Chass settings
+    ChassEnabled = false,
+    ChassDetectionRadius = 60,
+    ChassHeartImage = "rbxassetid://121720957343463",
+    ChassSoundId = "rbxassetid://9116795681",
+    ChassSoundVolume = 1,
+    ChassGlowColor = Color3.fromRGB(255, 105, 150),
+    ChassGlowFillAlpha = 0.45,
+    ChassGlowOutlineAlpha = 0.0,
+    ChassHeartSize = 35,
+    ChassHeartOffset = Vector3.new(0, 0, 0),
+    ChassHeartAlwaysOnTop = true,
+    ChassPulseInterval = 5,
+    -- Custom Finisher
+    CustomFinisherEnabled = false,
 }
 
 local ValidCombatTools = {
@@ -403,7 +416,9 @@ end
 
 local function startInfectionSequence(infectionType)
     if not canInfect then
-        Fluent:Notify({ Title = "Infection", Content = "You must respawn before starting a new infection.", Duration = 3 })
+        pcall(function()
+            if WindUI then WindUI:Notify({ Title = "Infection", Content = "You must respawn before starting a new infection.", Duration = 3 }) end
+        end)
         return
     end
     if InfectionActive then return end
@@ -733,7 +748,8 @@ RunService.Heartbeat:Connect(function(dt)
     local move = Vector3.new()
     if UserInputService:IsKeyDown(Enum.KeyCode.W) then move = move + Camera.CFrame.LookVector end
     if UserInputService:IsKeyDown(Enum.KeyCode.S) then move = move - Camera.CFrame.LookVector end
-    if UserInputService:IsKeyDown(Enum.KeyCode.A) then move = move - Camera.CFrame.RightVector end    if UserInputService:IsKeyDown(Enum.KeyCode.D) then move = move + Camera.CFrame.RightVector end
+    if UserInputService:IsKeyDown(Enum.KeyCode.A) then move = move - Camera.CFrame.RightVector end
+    if UserInputService:IsKeyDown(Enum.KeyCode.D) then move = move + Camera.CFrame.RightVector end
     if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move = move + Vector3.new(0, 1, 0) end
     if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then move = move - Vector3.new(0, 1, 0) end
 
@@ -1083,9 +1099,9 @@ local function removeElephantFoot()
     local target = workspace:FindFirstChild("LookAtMe")
     if target then
         target:Destroy()
-        Fluent:Notify({ Title = "Success", Content = "Elephant foot removed", Duration = 3 })
+        pcall(function() if WindUI then WindUI:Notify({ Title = "Success", Content = "Elephant foot removed", Duration = 3 }) end end)
     else
-        Fluent:Notify({ Title = "Failed", Content = "Elephant foot already removed", Duration = 3 })
+        pcall(function() if WindUI then WindUI:Notify({ Title = "Failed", Content = "Elephant foot already removed", Duration = 3 }) end end)
     end
 end
 
@@ -1093,9 +1109,9 @@ local function removeArabicDud()
     local arabic = workspace:FindFirstChild("Arabic")
     if arabic then
         arabic:Destroy()
-        Fluent:Notify({ Title = "Success", Content = "Arabic dud removed", Duration = 3 })
+        pcall(function() if WindUI then WindUI:Notify({ Title = "Success", Content = "Arabic dud removed", Duration = 3 }) end end)
     else
-        Fluent:Notify({ Title = "Failed", Content = "Arabic dud not found", Duration = 3 })
+        pcall(function() if WindUI then WindUI:Notify({ Title = "Failed", Content = "Arabic dud not found", Duration = 3 }) end end)
     end
 end
 
@@ -1107,13 +1123,13 @@ local function removeLobbyMusic()
             found = found + 1
         end
     end
-    Fluent:Notify({ Title = "Success", Content = "Removed "..found.." Radio(s)", Duration = 3 })
+    pcall(function() if WindUI then WindUI:Notify({ Title = "Success", Content = "Removed "..found.." Radio(s)", Duration = 3 }) end end)
 end
 
 local function deleteAllDoors()
     local gameDoors = workspace:FindFirstChild("GameDoors")
     if not gameDoors then
-        Fluent:Notify({ Title = "Error", Content = "GameDoors not found", Duration = 3 })
+        pcall(function() if WindUI then WindUI:Notify({ Title = "Error", Content = "GameDoors not found", Duration = 3 }) end end)
         return
     end
     local count = 0
@@ -1126,7 +1142,7 @@ local function deleteAllDoors()
             end
         end
     end
-    Fluent:Notify({ Title = "Success", Content = "Deleted "..count.." DoorsToOpen folder(s)", Duration = 3 })
+    pcall(function() if WindUI then WindUI:Notify({ Title = "Success", Content = "Deleted "..count.." DoorsToOpen folder(s)", Duration = 3 }) end end)
 end
 
 local function deleteAllLandmines()
@@ -1137,7 +1153,7 @@ local function deleteAllLandmines()
             count = count + 1
         end
     end
-    Fluent:Notify({ Title = "Success", Content = "Deleted "..count.." landmines", Duration = 3 })
+    pcall(function() if WindUI then WindUI:Notify({ Title = "Success", Content = "Deleted "..count.." landmines", Duration = 3 }) end end)
 end
 
 local teleportPoints = {
@@ -1523,8 +1539,98 @@ if BashCooldownUI then
     end)
 end
 
+-- Custom Finisher logic
+local blockAnimations = false
+local finisherActive = false
+local finisherTimer = nil
+
+local function isNPC(obj)
+    if not obj:IsA("Model") then return false end
+    if obj:IsA("Accessory") or obj:IsA("Tool") or obj:IsA("Hat") then return false end
+    if isPlayerCharacter(obj) then return false end
+    if obj == LocalPlayer.Character then return false end
+    local humanoid = obj:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return false end
+    if humanoid.Health <= 0 then return false end
+    return true
+end
+
+local function performCustomFinisher(target)
+    if finisherActive then return end
+    if not target or not isNPC(target) then return end
+    local humanoid = target:FindFirstChildOfClass("Humanoid")
+    if not humanoid or humanoid.Health > 50 then return end
+
+    finisherActive = true
+    blockAnimations = true
+
+    -- Force third person
+    local oldCamMode = LocalPlayer.CameraMode
+    local oldZoom = LocalPlayer.CameraMaxZoomDistance
+    LocalPlayer.CameraMode = Enum.CameraMode.Classic
+    LocalPlayer.CameraMaxZoomDistance = 999
+
+    -- Stop all animations on player
+    local char = LocalPlayer.Character
+    if char then
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            local animator = hum:FindFirstChildOfClass("Animator")
+            if animator then
+                for _, track in pairs(animator:GetPlayingAnimationTracks()) do
+                    track:Stop()
+                end
+            end
+        end
+    end
+
+    -- Play player animation
+    local playerAnimId = "rbxassetid://112634711476303" -- Chimera Teleport Execution (1)
+    local playerTrack = playAnimationOnHumanoid(playerAnimId, false)
+
+    -- Play victim animation on target (local)
+    local victimAnimId = "rbxassetid://83991914102646" -- Chimera victim (old)
+    local victimAnimator = target:FindFirstChildOfClass("Humanoid") and target:FindFirstChildOfClass("Humanoid"):FindFirstChildOfClass("Animator")
+    if not victimAnimator then
+        victimAnimator = Instance.new("Animator", target:FindFirstChildOfClass("Humanoid"))
+    end
+    local victimAnim = Instance.new("Animation")
+    victimAnim.AnimationId = victimAnimId
+    local victimTrack = victimAnimator:LoadAnimation(victimAnim)
+    victimTrack:Play()
+
+    -- Wait for completion (5 seconds)
+    task.wait(5)
+
+    -- Check if target died
+    local success = false
+    if humanoid and humanoid.Health <= 0 then
+        success = true
+    end
+
+    -- Notify
+    if success then
+        if WindUI then WindUI:Notify({ Title = "Finisher", Content = "Finisher successful!", Duration = 3 }) end
+    else
+        if WindUI then WindUI:Notify({ Title = "Finisher", Content = "Sorry :( Finisher failed.", Duration = 3 }) end
+    end
+
+    -- Stop animations
+    if playerTrack then playerTrack:Stop() end
+    if victimTrack then victimTrack:Stop() end
+
+    -- Reset camera
+    LocalPlayer.CameraMode = oldCamMode
+    LocalPlayer.CameraMaxZoomDistance = oldZoom
+
+    -- Re-enable animations
+    blockAnimations = false
+    finisherActive = false
+end
+
 local function onAttack()
     if not Config.GAttackEnabled then return end
+    if blockAnimations then return end
     local currentTick = tick()
     if not Config.BypassCombatCooldowns then
         if currentTick - LastAttackTick < 0.1 then return end
@@ -1568,6 +1674,39 @@ local function onAttack()
         CurrentAnimTrack = nil
     end)
     if PunchEvent then PunchEvent:FireServer() end
+
+    -- Custom Finisher check
+    if Config.CustomFinisherEnabled then
+        -- Detect mob hit (we need to know which mob was hit)
+        -- Since we don't have direct hit detection, we can check for nearby NPCs with low health after attack
+        task.delay(0.2, function()
+            local myChar = LocalPlayer.Character
+            if not myChar then return end
+            local myRoot = myChar:FindFirstChild("HumanoidRootPart")
+            if not myRoot then return end
+            local radius = 10
+            local closestNPC = nil
+            local closestDist = math.huge
+            for _, obj in ipairs(workspace:GetDescendants()) do
+                if isNPC(obj) then
+                    local root = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChildWhichIsA("BasePart")
+                    if root then
+                        local dist = (root.Position - myRoot.Position).Magnitude
+                        if dist <= radius and dist < closestDist then
+                            local hum = obj:FindFirstChildOfClass("Humanoid")
+                            if hum and hum.Health <= 50 then
+                                closestNPC = obj
+                                closestDist = dist
+                            end
+                        end
+                    end
+                end
+            end
+            if closestNPC then
+                performCustomFinisher(closestNPC)
+            end
+        end)
+    end
 end
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
@@ -1879,6 +2018,10 @@ local function stopAllAnimatorTracks()
 end
 
 local function applyAnimatorState()
+    if blockAnimations then
+        stopAllAnimatorTracks()
+        return
+    end
     if Config.FakeDeath then
         stopAllAnimatorTracks()
         return
@@ -1922,67 +2065,508 @@ local function applyAnimatorState()
     end
 end
 
-local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
+-- ===================== Chass Integration =====================
+local Chass = {
+    activeNPCs = {},
+    scanTimer = 0,
+    removingNPCs = {},
+    heartSound = nil,
+    isRunning = false,
+}
 
-local Window = Fluent:CreateWindow({
-    Title = "Sentinel - Examination",
-    SubTitle = " | version : 8.00.40",
-    TabWidth = 160,
-    Size = UDim2.fromOffset(520, 420),
-    Acrylic = true,
-    Theme = "Darker",
-    MinimizeKey = Enum.KeyCode.K
-})
+local function Chass_getCharacter()
+    return LocalPlayer.Character
+end
+
+local function Chass_getRoot(model)
+    return model:FindFirstChild("HumanoidRootPart")
+        or model:FindFirstChild("Torso")
+        or model:FindFirstChildWhichIsA("BasePart")
+end
+
+local function Chass_belongsToAPlayer(obj)
+    local myChar = Chass_getCharacter()
+    if myChar and (obj == myChar or obj:IsDescendantOf(myChar)) then
+        return true
+    end
+    for _, p in ipairs(Players:GetPlayers()) do
+        local pc = p.Character
+        if pc and (obj == pc or obj:IsDescendantOf(pc)) then
+            return true
+        end
+    end
+    return false
+end
+
+local function Chass_nameMatchesWhitelist(name)
+    local whitelist = {
+        "Bomber", "ChemicalFury", "Chimera", "CombatEngineer", "CrawlerLurker",
+        "Dave", "Fury", "Gilbert", "Gunner", "Lurker", "Mikhail",
+        "Mutant crawler", "Mutant", "RIF AK", "RIF KS", "RIF Miniboss",
+        "RIF STATIONARY", "Radaways", "Riser", "SIN", "Shielder", "Slasher",
+    }
+    local lname = name:lower()
+    for _, pattern in ipairs(whitelist) do
+        local lpattern = pattern:lower()
+        if lname:sub(1, #lpattern) == lpattern then
+            return true
+        end
+    end
+    return false
+end
+
+local function Chass_isNPC(obj)
+    if not obj:IsA("Model") then return false end
+    if obj:IsA("Accessory") or obj:IsA("Tool") or obj:IsA("Hat") then return false end
+    if not Chass_nameMatchesWhitelist(obj.Name) then return false end
+    if Chass_belongsToAPlayer(obj) then return false end
+    if not Chass_getRoot(obj) then return false end
+    return true
+end
+
+local Chass_FADE_IN = TweenInfo.new(0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.Out)
+local Chass_FADE_OUT = TweenInfo.new(0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.In)
+
+local function Chass_heartbeatAnimation(imageLabel)
+    if not imageLabel or not imageLabel.Parent then return end
+    
+    local beatIn = TweenInfo.new(0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.Out)
+    local beatOut = TweenInfo.new(0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.In)
+    
+    while imageLabel and imageLabel.Parent do
+        TweenService:Create(imageLabel, beatIn, {
+            ImageTransparency = 0.2
+        }):Play()
+        
+        task.wait(0.5)
+        
+        if not imageLabel or not imageLabel.Parent then break end
+        
+        TweenService:Create(imageLabel, beatOut, {
+            ImageTransparency = 0.8
+        }):Play()
+        
+        task.wait(0.5)
+    end
+end
+
+local function Chass_espHeartbeatAnimation(highlight)
+    if not highlight or not highlight.Parent then return end
+    
+    local beatIn = TweenInfo.new(0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.Out)
+    local beatOut = TweenInfo.new(0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.In)
+    
+    while highlight and highlight.Parent do
+        TweenService:Create(highlight, beatIn, {
+            FillTransparency = 0.1,
+            OutlineTransparency = 0.1
+        }):Play()
+        
+        task.wait(0.5)
+        
+        if not highlight or not highlight.Parent then break end
+        
+        TweenService:Create(highlight, beatOut, {
+            FillTransparency = 0.5,
+            OutlineTransparency = 0.5
+        }):Play()
+        
+        task.wait(0.5)
+    end
+end
+
+local function Chass_pulseHeart(imageLabel)
+    if not imageLabel or not imageLabel.Parent then return end
+    
+    local pulseInfo = TweenInfo.new(0.15, Enum.EasingStyle.Sine, Enum.EasingDirection.Out)
+    TweenService:Create(imageLabel, pulseInfo, {
+        Size = UDim2.new(0.35, 0, 0.35, 0),
+        Position = UDim2.new(0.325, 0, 0.325, 0),
+    }):Play()
+
+    task.delay(0.15, function()
+        if not imageLabel or not imageLabel.Parent then return end
+        
+        local pulseBack = TweenInfo.new(0.25, Enum.EasingStyle.Sine, Enum.EasingDirection.In)
+        TweenService:Create(imageLabel, pulseBack, {
+            Size = UDim2.new(0.35, 0, 0.35, 0),
+            Position = UDim2.new(0.325, 0, 0.325, 0),
+        }):Play()
+    end)
+end
+
+local function Chass_smoothRemoveEffects(npc)
+    if Chass.removingNPCs[npc] then return end
+    Chass.removingNPCs[npc] = true
+    
+    local data = Chass.activeNPCs[npc]
+    if not data then 
+        Chass.removingNPCs[npc] = nil
+        return 
+    end
+
+    data.aliveCheck()
+    
+    local fadeComplete = false
+    local highlightComplete = false
+    
+    if data.billboard and data.billboard.Parent then
+        local image = data.billboard:FindFirstChild("Heart")
+        if image then
+            TweenService:Create(image, Chass_FADE_OUT, {
+                ImageTransparency = 1
+            }):Play()
+            
+            task.delay(0.5, function()
+                if data.billboard and data.billboard.Parent then
+                    data.billboard:Destroy()
+                end
+                fadeComplete = true
+                if highlightComplete then
+                    Chass.activeNPCs[npc] = nil
+                    Chass.removingNPCs[npc] = nil
+                end
+            end)
+        else
+            if data.billboard then
+                data.billboard:Destroy()
+            end
+            fadeComplete = true
+            if highlightComplete then
+                Chass.activeNPCs[npc] = nil
+                Chass.removingNPCs[npc] = nil
+            end
+        end
+    else
+        fadeComplete = true
+    end
+    
+    if data.highlight and data.highlight.Parent then
+        TweenService:Create(data.highlight, Chass_FADE_OUT, {
+            FillTransparency = 1,
+            OutlineTransparency = 1
+        }):Play()
+        
+        task.delay(0.5, function()
+            if data.highlight and data.highlight.Parent then
+                data.highlight:Destroy()
+            end
+            highlightComplete = true
+            if fadeComplete then
+                Chass.activeNPCs[npc] = nil
+                Chass.removingNPCs[npc] = nil
+            end
+        end)
+    else
+        highlightComplete = true
+    end
+
+    if data.diedConn then
+        data.diedConn:Disconnect()
+    end
+    
+    if fadeComplete and highlightComplete then
+        Chass.activeNPCs[npc] = nil
+        Chass.removingNPCs[npc] = nil
+    end
+end
+
+local function Chass_addEffects(npc)
+    if Chass.activeNPCs[npc] or Chass.removingNPCs[npc] then return end
+
+    local highlight = Instance.new("Highlight")
+    highlight.FillColor           = Config.ChassGlowColor
+    highlight.OutlineColor        = Config.ChassGlowColor
+    highlight.FillTransparency    = 0.5
+    highlight.OutlineTransparency = 0.5
+    highlight.Adornee             = npc
+    highlight.Parent              = npc
+
+    TweenService:Create(highlight, Chass_FADE_IN, {
+        FillTransparency = Config.ChassGlowFillAlpha,
+        OutlineTransparency = Config.ChassGlowOutlineAlpha
+    }):Play()
+
+    local root = Chass_getRoot(npc)
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name           = "HeartNPC_Billboard"
+    billboard.Size           = UDim2.new(0, Config.ChassHeartSize, 0, Config.ChassHeartSize)
+    billboard.StudsOffset    = Config.ChassHeartOffset
+    billboard.AlwaysOnTop    = Config.ChassHeartAlwaysOnTop
+    billboard.LightInfluence = 0
+    billboard.Parent         = root
+
+    local image = Instance.new("ImageLabel")
+    image.Name                   = "Heart"
+    image.Size                   = UDim2.new(0.35, 0, 0.35, 0)
+    image.Position               = UDim2.new(0.325, 0, 0.325, 0)
+    image.BackgroundTransparency = 1
+    image.ImageTransparency      = 0.8
+    image.Image                  = Config.ChassHeartImage
+    image.ScaleType              = Enum.ScaleType.Fit
+    image.Parent                 = billboard
+
+    TweenService:Create(image, Chass_FADE_IN, {
+        ImageTransparency = 0
+    }):Play()
+
+    local alive = true
+    
+    local heartbeatThread = task.spawn(function()
+        while alive and npc.Parent do
+            Chass_heartbeatAnimation(image)
+            task.wait(1)
+        end
+    end)
+    
+    local espHeartbeatThread = task.spawn(function()
+        while alive and npc.Parent do
+            Chass_espHeartbeatAnimation(highlight)
+            task.wait(1)
+        end
+    end)
+
+    local pulseThread = task.spawn(function()
+        while alive and npc.Parent do
+            Chass_pulseHeart(image)
+            task.wait(Config.ChassPulseInterval)
+        end
+    end)
+
+    local diedConn = nil
+    local humanoid = npc:FindFirstChildOfClass("Humanoid")
+    if humanoid then
+        diedConn = humanoid.Died:Connect(function()
+            Chass_smoothRemoveEffects(npc)
+        end)
+    end
+
+    Chass.activeNPCs[npc] = {
+        highlight = highlight,
+        billboard = billboard,
+        heartbeatThread = heartbeatThread,
+        espHeartbeatThread = espHeartbeatThread,
+        pulseThread = pulseThread,
+        diedConn  = diedConn,
+        aliveCheck = function() alive = false end,
+    }
+end
+
+local function Chass_clearAll()
+    for npc in pairs(Chass.activeNPCs) do
+        Chass_smoothRemoveEffects(npc)
+    end
+    if Chass.heartSound and Chass.heartSound.IsPlaying then Chass.heartSound:Stop() end
+end
+
+local function Chass_init()
+    if Chass.heartSound then
+        Chass.heartSound:Destroy()
+    end
+    Chass.heartSound = Instance.new("Sound")
+    Chass.heartSound.SoundId = Config.ChassSoundId
+    Chass.heartSound.Volume = Config.ChassSoundVolume
+    Chass.heartSound.Looped = true
+    Chass.heartSound.RollOffMaxDistance = 0
+    Chass.heartSound.Parent = workspace
+end
+
+local function Chass_scan()
+    if not Config.ChassEnabled then
+        Chass_clearAll()
+        return
+    end
+    local char = Chass_getCharacter()
+    if not char then return end
+    local myRoot = char:FindFirstChild("HumanoidRootPart")
+    if not myRoot then return end
+
+    local myPos   = myRoot.Position
+    local nearby  = {}
+
+    local scanRoot = workspace
+    local folder = workspace:FindFirstChild("Characters")
+    if folder then scanRoot = folder end
+
+    local list = scanRoot:GetDescendants()
+
+    local seen = {}
+    for _, obj in ipairs(list) do
+        if Chass_isNPC(obj) then
+            local ancestor = obj.Parent
+            local isNested = false
+            while ancestor and ancestor ~= scanRoot do
+                if seen[ancestor] then
+                    isNested = true
+                    break
+                end
+                ancestor = ancestor.Parent
+            end
+
+            if not isNested then
+                seen[obj] = true
+                local npcRoot = Chass_getRoot(obj)
+                local humanoid = obj:FindFirstChildOfClass("Humanoid")
+                local isDead = humanoid and humanoid.Health <= 0
+                if npcRoot and not isDead then
+                    local dist = (npcRoot.Position - myPos).Magnitude
+                    if dist <= Config.ChassDetectionRadius then
+                        nearby[obj] = true
+                        Chass_addEffects(obj)
+                    end
+                end
+            end
+        end
+    end
+
+    for npc in pairs(Chass.activeNPCs) do
+        if not nearby[npc] then
+            Chass_smoothRemoveEffects(npc)
+        end
+    end
+
+    local hasNearby = false
+    for npc in pairs(Chass.activeNPCs) do
+        if not Chass.removingNPCs[npc] then
+            hasNearby = true
+            break
+        end
+    end
+    
+    if hasNearby and not Chass.heartSound.IsPlaying then
+        Chass.heartSound:Play()
+    elseif not hasNearby and Chass.heartSound.IsPlaying then
+        Chass.heartSound:Stop()
+    end
+end
+
+-- Start Chass loop
+task.spawn(function()
+    Chass_init()
+    while true do
+        task.wait(0.5)
+        Chass_scan()
+    end
+end)
+
+LocalPlayer.CharacterAdded:Connect(function()
+    Chass_clearAll()
+end)
+
+-- ===================== End Chass =====================
+
+local WindUI = nil
+local loadSuccess, loadErr = pcall(function()
+    WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
+end)
+
+if not loadSuccess or not WindUI then
+    game:GetService("StarterGui"):SetCore("SendNotification", {
+        Title = "WindUI Error",
+        Text = "Failed to load WindUI. Check your internet or try a different executor.",
+        Duration = 15
+    })
+    return
+end
+
+if not WindUI.Creator or not WindUI.CreateWindow or not WindUI.SetTheme or not WindUI.Notify then
+    game:GetService("StarterGui"):SetCore("SendNotification", {
+        Title = "WindUI Error",
+        Text = "WindUI loaded but missing required methods. Please update or use another script.",
+        Duration = 15
+    })
+    return
+end
+
+pcall(function()
+    WindUI.Creator.AddThemes({
+        "Light", "Dark", "Rose"
+    })
+end)
+
+local Window = nil
+local createSuccess, createErr = pcall(function()
+    Window = WindUI:CreateWindow({
+        Title = "Sentinel - Examination",
+        Author = "Sentinel",
+        Folder = "Sentinel",
+        ScrollBarEnabled = true,
+        Size = UDim2.fromOffset(750, 650),
+        ToggleKey = Enum.KeyCode.K,
+        User = {
+            Enabled = true,
+            Anonymous = false,
+            Callback = nil
+        }
+    })
+end)
+
+if not createSuccess or not Window then
+    game:GetService("StarterGui"):SetCore("SendNotification", {
+        Title = "WindUI Error",
+        Text = "Failed to create window. Error: " .. tostring(createErr),
+        Duration = 15
+    })
+    return
+end
+
+local function safeCall(func, ...)
+    local ok, err = pcall(func, ...)
+    if not ok then
+        warn("Error in safeCall: ", err)
+    end
+    return ok, err
+end
+
+safeCall(function()
+    Window:Tag({
+        Title = "v8.00.40",
+        Icon = "shield-check",
+        Color = Color3.fromHex("#30ff6a"),
+        Radius = 13
+    })
+end)
 
 local successProduct, productInfo = pcall(function()
     return MarketplaceService:GetProductInfo(game.PlaceId, Enum.InfoType.Asset)
 end)
 local GameLastUpdateString = if successProduct and (productInfo and productInfo.Updated) then DateTime.fromUnixTimestamp(DateTime.fromIsoDate(productInfo.Updated).UnixTimestamp + -18000):FormatUniversalTime("MM/DD/YYYY HH:mm:ss", "en-us") .. " EST" else "n/a"
 
-local Tabs = {
-    Player = Window:AddTab({ Title = "Player", Icon = "user" }),
-    ESP = Window:AddTab({ Title = "ESP", Icon = "eye" }),
-    Combat = Window:AddTab({ Title = "Combat", Icon = "crosshair" }),
-    World = Window:AddTab({ Title = "World", Icon = "globe" }),
-    Fun = Window:AddTab({ Title = "Fun", Icon = "smile" }),
-    Game = Window:AddTab({ Title = "Game", Icon = "trophy" }),
-    Settings = Window:AddTab({ Title = "Settings", Icon = "settings" }),
-    Dev = Window:AddTab({ Title = "Dev", Icon = "code" }),
-    About = Window:AddTab({ Title = "About", Icon = "info" }),
-}
+local Tabs = {}
+safeCall(function()
+    Tabs = {
+        Player = Window:Tab({ Title = "Player", Icon = "user" }),
+        ESP = Window:Tab({ Title = "ESP", Icon = "eye" }),
+        Combat = Window:Tab({ Title = "Combat", Icon = "crosshair" }),
+        World = Window:Tab({ Title = "World", Icon = "globe" }),
+        Fun = Window:Tab({ Title = "Fun", Icon = "smile" }),
+        Game = Window:Tab({ Title = "Game", Icon = "trophy" }),
+        Settings = Window:Tab({ Title = "Settings", Icon = "settings" }),
+        Dev = Window:Tab({ Title = "Dev", Icon = "code" }),
+        About = Window:Tab({ Title = "About", Icon = "info" }),
+    }
+end)
 
-local function storeComponent(id, component)
-    UIComponents[id] = component
-end
-
-local function applyConfigToUI()
-    for key, component in pairs(UIComponents) do
-        if Config[key] ~= nil then
-            if component.SetValue then
-                pcall(function()
-                    component:SetValue(Config[key])
-                end)
-            end
-        end
-    end
+if not Tabs or not Tabs.Player then
+    game:GetService("StarterGui"):SetCore("SendNotification", {
+        Title = "Error",
+        Text = "Failed to create tabs. Check console for details.",
+        Duration = 10
+    })
+    return
 end
 
 if not isfolder("sentinel/configs/") then
     makefolder("sentinel/configs/")
 end
 
-local function CreatePlayerTab()
-    local WalkspeedSection = Tabs.Player:AddSection("Walkspeed Settings")
-    local wstoggle = WalkspeedSection:AddToggle("WSToggle", { Title = "Enable Speed Modifiers", Default = false })
-    wstoggle:OnChanged(function(v) Config.SpeedHackEnabled = v end)
-    storeComponent("SpeedHackEnabled", wstoggle)
-
-    local wsslider = WalkspeedSection:AddSlider("WSSlider", { Title = "WalkSpeed", Min = 1, Max = 150, Default = 16, Rounding = 0 })
-    wsslider:OnChanged(function(v) Config.WalkSpeedValue = v end)
-    storeComponent("WalkSpeedValue", wsslider)
-
-    local infstam = WalkspeedSection:AddToggle("InfiniteStaminaToggle", { Title = "Infinite Stamina [BETA]", Default = false })
-    infstam:OnChanged(function(v)
+do
+    local tab = Tabs.Player
+    
+    local WalkspeedSection = tab:Section({Title = "Walkspeed Settings", Opened = true})
+    WalkspeedSection:Toggle({ Title = "Enable Speed Modifiers", Default = false, Callback = function(v) Config.SpeedHackEnabled = v end })
+    WalkspeedSection:Slider({ Title = "WalkSpeed", Value = {Min = 1, Max = 150, Default = 16}, Rounding = 0, Enabled = true, Callback = function(v) Config.WalkSpeedValue = v end })
+    WalkspeedSection:Toggle({ Title = "Infinite Stamina [BETA]", Default = false, Callback = function(v)
         Config.InfiniteStaminaEnabled = v
         if not v then
             isShiftHeld = false
@@ -1994,27 +2578,16 @@ local function CreatePlayerTab()
                 end
             end
         end
-    end)
-    storeComponent("InfiniteStaminaEnabled", infstam)
+    end })
 
-    local JumpSection = Tabs.Player:AddSection("Jump Settings")
-    local jptoggle = JumpSection:AddToggle("JPToggle", { Title = "Enable JumpPower", Default = false })
-    jptoggle:OnChanged(function(v) Config.JumpPowerEnabled = v end)
-    storeComponent("JumpPowerEnabled", jptoggle)
+    local JumpSection = tab:Section({Title = "Jump Settings", Opened = true})
+    JumpSection:Toggle({ Title = "Enable JumpPower", Default = false, Callback = function(v) Config.JumpPowerEnabled = v end })
+    JumpSection:Slider({ Title = "JumpPower", Value = {Min = 5, Max = 75, Default = 30}, Rounding = 0, Enabled = true, Callback = function(v) Config.JumpPowerValue = v end })
+    JumpSection:Toggle({ Title = "Infinite Jump", Default = false, Callback = function(v) Config.InfiniteJump = v end })
+    JumpSection:Button({ Title = "Bypass Jump AC", Callback = function() Config.JumpBypassActive = not Config.JumpBypassActive end })
 
-    local jpslider = JumpSection:AddSlider("JPSlider", { Title = "JumpPower", Min = 5, Max = 75, Default = 30, Rounding = 0 })
-    jpslider:OnChanged(function(v) Config.JumpPowerValue = v end)
-    storeComponent("JumpPowerValue", jpslider)
-
-    local infjump = JumpSection:AddToggle("InfJump", { Title = "Infinite Jump", Default = false })
-    infjump:OnChanged(function(v) Config.InfiniteJump = v end)
-    storeComponent("InfiniteJump", infjump)
-
-    JumpSection:AddButton({ Title = "Bypass Jump AC", Callback = function() Config.JumpBypassActive = not Config.JumpBypassActive end })
-
-    local PhysicSection = Tabs.Player:AddSection("Physic Settings")
-    local flytoggle = PhysicSection:AddToggle("FlyToggle", { Title = "Fly", Default = false })
-    flytoggle:OnChanged(function(v)
+    local PhysicSection = tab:Section({Title = "Physic Settings", Opened = true})
+    PhysicSection:Toggle({ Title = "Fly", Default = false, Callback = function(v)
         Config.FlyEnabled = v
         if v then
             CurrentFlyType = Config.FlyType
@@ -2023,130 +2596,100 @@ local function CreatePlayerTab()
         else
             enableFly(false)
         end
-    end)
-    storeComponent("FlyEnabled", flytoggle)
-
-    local flydropdown = PhysicSection:AddDropdown("FlyTypeDropdown", { Title = "Fly Method", Values = {"CFrame", "BodyVelocity [BEST]", "Seat [UNDETECTED]"}, Default = "CFrame" })
-    flydropdown:OnChanged(function(v)
+    end })
+    PhysicSection:Dropdown({ Title = "Fly Method", Values = {"CFrame", "BodyVelocity [BEST]", "Seat [UNDETECTED]"}, Default = "CFrame", Callback = function(v)
         Config.FlyType = v
         if Config.FlyEnabled then
             CurrentFlyType = v
             enableFly(true)
         end
-    end)
-    storeComponent("FlyType", flydropdown)
-
-    local flyslider = PhysicSection:AddSlider("FlySpeedSlider", { Title = "Fly Speed", Min = 1, Max = 100, Default = 50, Rounding = 0 })
-    flyslider:OnChanged(function(v)
+    end })
+    PhysicSection:Slider({ Title = "Fly Speed", Value = {Min = 1, Max = 100, Default = 50}, Rounding = 0, Enabled = true, Callback = function(v)
         Config.FlySpeed = v
         FlySpeed = v
-    end)
-    storeComponent("FlySpeed", flyslider)
-
-    local noclip = PhysicSection:AddToggle("NoclipToggle", { Title = "Noclip", Default = false })
-    noclip:OnChanged(function(v) Config.NoclipEnabled = v end)
-    storeComponent("NoclipEnabled", noclip)
-
-    local stagger = PhysicSection:AddToggle("StaggerToggle", {
-        Title = "Disable Stagger",
-        Default = false,
-        Callback = function(value)
-            Config.StaggerEnabled = not value
-            local char = LocalPlayer.Character
-            if char then
-                local clientScripts = char:FindFirstChild("ClientScripts")
-                if clientScripts then
-                    local stagger = clientScripts:FindFirstChild("Stagger")
-                    if stagger then
-                        stagger.Disabled = not Config.StaggerEnabled
-                    end
+    end })
+    PhysicSection:Toggle({ Title = "Noclip", Default = false, Callback = function(v) Config.NoclipEnabled = v end })
+    PhysicSection:Toggle({ Title = "Disable Stagger", Default = false, Callback = function(value)
+        Config.StaggerEnabled = not value
+        local char = LocalPlayer.Character
+        if char then
+            local clientScripts = char:FindFirstChild("ClientScripts")
+            if clientScripts then
+                local stagger = clientScripts:FindFirstChild("Stagger")
+                if stagger then
+                    stagger.Disabled = not Config.StaggerEnabled
                 end
             end
         end
-    })
-    storeComponent("StaggerEnabled", stagger)
+    end })
 
-    local LandminesSection = Tabs.Player:AddSection("Landmines")
-    local ignoremine = LandminesSection:AddToggle("IgnoreLandmineToggle", {
-        Title = "Ignore Landmines [BETA]",
-        Default = false,
-        Callback = function(v)
-            Config.IgnoreLandmine = v
-            if v then
-                local success, execName = pcall(getexecutorname)
-                if not success or not execName then
-                    execName = "Unknown"
-                end
-                local function hookLandmine()
-                    if landmineHitEvent then
-                        if pcall(function() return getrawmetatable end) and pcall(function() return hookmetamethod end) then
-                            originalLandmineFire = landmineHitEvent.FireServer
-                            landmineHitEvent.FireServer = function() end
-                            local mt = getrawmetatable(landmineHitEvent)
-                            local oldNamecall = mt.__namecall
-                            mt.__namecall = function(self, ...)
-                                if self == landmineHitEvent then return end
-                                return oldNamecall(self, ...)
-                            end
-                        else
-                            Fluent:Notify({ Title = "Ignore Landmines", Content = execName .. " do not support this function", Duration = 5 })
+    local LandminesSection = tab:Section({Title = "Landmines", Opened = true})
+    LandminesSection:Toggle({ Title = "Ignore Landmines [BETA]", Default = false, Callback = function(v)
+        Config.IgnoreLandmine = v
+        if v then
+            local success, execName = pcall(getexecutorname)
+            if not success or not execName then
+                execName = "Unknown"
+            end
+            local function hookLandmine()
+                if landmineHitEvent then
+                    if pcall(function() return getrawmetatable end) and pcall(function() return hookmetamethod end) then
+                        originalLandmineFire = landmineHitEvent.FireServer
+                        landmineHitEvent.FireServer = function() end
+                        local mt = getrawmetatable(landmineHitEvent)
+                        local oldNamecall = mt.__namecall
+                        mt.__namecall = function(self, ...)
+                            if self == landmineHitEvent then return end
+                            return oldNamecall(self, ...)
                         end
+                    else
+                        pcall(function() if WindUI then WindUI:Notify({ Title = "Ignore Landmines", Content = execName .. " do not support this function", Duration = 5 }) end end)
                     end
                 end
-                hookLandmine()
-                for _, obj in ipairs(workspace:GetDescendants()) do
-                    if obj.Name == "Landmine" then
-                        local mine = obj:FindFirstChild("Mine")
+            end
+            hookLandmine()
+            for _, obj in ipairs(workspace:GetDescendants()) do
+                if obj.Name == "Landmine" then
+                    local mine = obj:FindFirstChild("Mine")
+                    if mine and mine:IsA("BasePart") then
+                        mine.CanTouch = false
+                    end
+                end
+            end
+            if not IgnoreLandmineConnection then
+                IgnoreLandmineConnection = workspace.DescendantAdded:Connect(function(desc)
+                    if Config.IgnoreLandmine and desc.Name == "Landmine" then
+                        task.wait(0.1)
+                        local mine = desc:FindFirstChild("Mine")
                         if mine and mine:IsA("BasePart") then
                             mine.CanTouch = false
                         end
                     end
-                end
-                if not IgnoreLandmineConnection then
-                    IgnoreLandmineConnection = workspace.DescendantAdded:Connect(function(desc)
-                        if Config.IgnoreLandmine and desc.Name == "Landmine" then
-                            task.wait(0.1)
-                            local mine = desc:FindFirstChild("Mine")
-                            if mine and mine:IsA("BasePart") then
-                                mine.CanTouch = false
-                            end
-                        end
-                    end)
-                end
-            else
-                if originalLandmineFire and landmineHitEvent then
-                    landmineHitEvent.FireServer = originalLandmineFire
-                    originalLandmineFire = nil
-                end
-                if IgnoreLandmineConnection then
-                    IgnoreLandmineConnection:Disconnect()
-                    IgnoreLandmineConnection = nil
-                end
+                end)
+            end
+        else
+            if originalLandmineFire and landmineHitEvent then
+                landmineHitEvent.FireServer = originalLandmineFire
+                originalLandmineFire = nil
+            end
+            if IgnoreLandmineConnection then
+                IgnoreLandmineConnection:Disconnect()
+                IgnoreLandmineConnection = nil
             end
         end
-    })
-    storeComponent("IgnoreLandmine", ignoremine)
+    end })
+    LandminesSection:Button({ Title = "Delete All Landmines", Callback = deleteAllLandmines })
 
-    LandminesSection:AddButton({ Title = "Delete All Landmines", Callback = deleteAllLandmines })
-
-    local GodmodSection = Tabs.Player:AddSection("God mod [BETA]")
-    local godmode = GodmodSection:AddToggle("GodmodeToggle", { Title = "Godmode", Default = false })
-    godmode:OnChanged(function(v)
+    local GodmodSection = tab:Section({Title = "God mod [BETA]", Opened = true})
+    GodmodSection:Toggle({ Title = "Godmode", Default = false, Callback = function(v)
         Config.GodmodeEnabled = v
         if v then
             GodmodePreviousPosition = nil
             GodmodeTeleported = false
         end
-    end)
-    storeComponent("GodmodeEnabled", godmode)
-
-    local godhealth = GodmodSection:AddSlider("GodmodeHealthSlider", { Title = "Health Threshold", Min = 1, Max = 99, Default = 10, Rounding = 0 })
-    godhealth:OnChanged(function(v)
-        Config.GodmodeHealthThreshold = v
-    end)
-    storeComponent("GodmodeHealthThreshold", godhealth)
-
-    GodmodSection:AddButton({ Title = "Teleport to Baseplate", Callback = function()
+    end })
+    GodmodSection:Slider({ Title = "Health Threshold", Value = {Min = 1, Max = 99, Default = 10}, Rounding = 0, Enabled = true, Callback = function(v) Config.GodmodeHealthThreshold = v end })
+    GodmodSection:Button({ Title = "Teleport to Baseplate", Callback = function()
         local char = LocalPlayer.Character
         if char and char:FindFirstChild("HumanoidRootPart") then
             GodmodePreviousPosition = char.HumanoidRootPart.CFrame
@@ -2154,7 +2697,7 @@ local function CreatePlayerTab()
             GodmodeTeleported = true
         end
     end })
-    GodmodSection:AddButton({ Title = "Return to Previous Position", Callback = function()
+    GodmodSection:Button({ Title = "Return to Previous Position", Callback = function()
         if GodmodePreviousPosition then
             local char = LocalPlayer.Character
             if char and char:FindFirstChild("HumanoidRootPart") then
@@ -2163,263 +2706,193 @@ local function CreatePlayerTab()
                 GodmodePreviousPosition = nil
             end
         else
-            Fluent:Notify({ Title = "Error", Content = "No previous position stored", Duration = 2 })
+            pcall(function() if WindUI then WindUI:Notify({ Title = "Error", Content = "No previous position stored", Duration = 2 }) end end)
         end
     end })
 
-    local HealthSection = Tabs.Player:AddSection("Character Health")
-    HealthSection:AddButton({ Title = "Suicide", Callback = function() local character = LocalPlayer.Character; local humanoid = character and character:FindFirstChildOfClass("Humanoid"); if humanoid then humanoid.Health = 0 end end })
-    HealthSection:AddButton({ Title = "Suicide with Animation", Callback = suicideWithAnimation })
-    local fakedeath = HealthSection:AddToggle("FakeDeathToggle", { Title = "Fake Death", Default = false })
-    fakedeath:OnChanged(function(v)
-        Config.FakeDeath = v
-        toggleFakeDeath()
-    end)
-    storeComponent("FakeDeath", fakedeath)
+    local HealthSection = tab:Section({Title = "Character Health", Opened = true})
+    HealthSection:Button({ Title = "Suicide", Callback = function() local character = LocalPlayer.Character; local humanoid = character and character:FindFirstChildOfClass("Humanoid"); if humanoid then humanoid.Health = 0 end end })
+    HealthSection:Button({ Title = "Suicide with Animation", Callback = suicideWithAnimation })
+    HealthSection:Toggle({ Title = "Fake Death", Default = false, Callback = function(v) Config.FakeDeath = v; toggleFakeDeath() end })
+    HealthSection:Toggle({ Title = "Fake Injured (idle)", Default = false, Callback = function(v) Config.FakeInjured = v; toggleFakeInjured() end })
 
-    local fakeinjured = HealthSection:AddToggle("FakeInjuredToggle", { Title = "Fake Injured (idle)", Default = false })
-    fakeinjured:OnChanged(function(v)
-        Config.FakeInjured = v
-        toggleFakeInjured()
-    end)
-    storeComponent("FakeInjured", fakeinjured)
-
-    local InfectionSection = Tabs.Player:AddSection("Player Infection")
-    InfectionSection:AddButton({
-        Title = "Fake Controllable Infected",
-        Callback = function()
-            if not canInfect then
-                Fluent:Notify({ Title = "Infection", Content = "You must respawn before starting a new infection.", Duration = 3 })
-                return
-            end
-            if InfectionActive then
-                Fluent:Notify({ Title = "Infection", Content = "Already active!", Duration = 2 })
-                return
-            end
-            startInfectionSequence("Controllable")
+    local InfectionSection = tab:Section({Title = "Player Infection", Opened = true})
+    InfectionSection:Button({ Title = "Fake Controllable Infected", Callback = function()
+        if not canInfect then
+            pcall(function() if WindUI then WindUI:Notify({ Title = "Infection", Content = "You must respawn before starting a new infection.", Duration = 3 }) end end)
+            return
         end
-    })
-    InfectionSection:AddButton({
-        Title = "Fake Non-Controllable Infected",
-        Callback = function()
-            if not canInfect then
-                Fluent:Notify({ Title = "Infection", Content = "You must respawn before starting a new infection.", Duration = 3 })
-                return
-            end
-            if InfectionActive then
-                Fluent:Notify({ Title = "Infection", Content = "Already active!", Duration = 2 })
-                return
-            end
-            startInfectionSequence("NonControllable")
+        if InfectionActive then
+            pcall(function() if WindUI then WindUI:Notify({ Title = "Infection", Content = "Already active!", Duration = 2 }) end end)
+            return
         end
-    })
-    InfectionSection:AddButton({
-        Title = "Get Infected [a fifty-fifty chance to work..]",
-        Callback = function()
-            if not canInfect then
-                Fluent:Notify({ Title = "Infection", Content = "You must respawn before starting a new infection.", Duration = 3 })
-                return
-            end
-            if InfectionActive then
-                Fluent:Notify({ Title = "Infection", Content = "Already active!", Duration = 2 })
-                return
-            end
-            local char = LocalPlayer.Character
-            if not char then return end
-            local humanoid = char:FindFirstChildOfClass("Humanoid")
-            if not humanoid then return end
-            if humanoid.Health < 100 then
-                Fluent:Notify({ Title = "Infection Failed", Content = "Sentinel was unable to infect you. You do not meet all the requirements (100 HP+).", Duration = 7 })
-                return
-            end
-            local hrp = char:FindFirstChild("HumanoidRootPart")
-            if not hrp then return end
-            local originalPos = hrp.CFrame
-
-            local screenGui = Instance.new("ScreenGui")
-            screenGui.Name = "SentinelInfectionOverlay"
-            screenGui.Parent = CoreGui
-            screenGui.IgnoreGuiInset = true
-
-            local blackFrame = Instance.new("Frame")
-            blackFrame.Size = UDim2.new(1, 0, 1, 0)
-            blackFrame.BackgroundColor3 = Color3.new(0, 0, 0)
-            blackFrame.BorderSizePixel = 0
-            blackFrame.Parent = screenGui
-
-            local textLabel = Instance.new("TextLabel")
-            textLabel.Size = UDim2.new(1, 0, 0.2, 0)
-            textLabel.Position = UDim2.new(0, 0, 0.4, 0)
-            textLabel.BackgroundTransparency = 1
-            textLabel.Text = "SENTINEL IS WORKING ON REAL INFECTION..."
-            textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-            textLabel.Font = Enum.Font.GothamBold
-            textLabel.TextSize = 24
-            textLabel.TextStrokeTransparency = 0.5
-            textLabel.Parent = screenGui
-
-            local particles = {}
-            for i = 1, 20 do
-                local part = Instance.new("Frame")
-                part.Size = UDim2.new(0, 4, 0, 4)
-                part.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
-                part.BackgroundTransparency = 0.5
-                part.Position = UDim2.new(math.random(), 0, math.random(), 0)
-                part.Parent = screenGui
-                table.insert(particles, part)
-
-                local targetY = math.random() * 0.3
-                local duration = math.random() * 2 + 1
-                local tween = TweenService:Create(part, TweenInfo.new(duration, Enum.EasingStyle.Linear), {
-                    Position = UDim2.new(part.Position.X.Scale + math.random(-0.1, 0.1), 0, targetY, 0),
-                    BackgroundTransparency = 1
-                })
-                tween:Play()
-                tween.Completed:Connect(function()
-                    part:Destroy()
-                end)
-            end
-
-            teleportTo(Vector3.new(-90, 46.8, -1759))
-            task.wait(3)
-            char:PivotTo(originalPos)
-            task.wait(0.5)
-
-            local tweenInfo = TweenInfo.new(1, Enum.EasingStyle.Linear)
-            local fadeOut = TweenService:Create(blackFrame, tweenInfo, { BackgroundTransparency = 1 })
-            fadeOut:Play()
-            local textFade = TweenService:Create(textLabel, tweenInfo, { TextTransparency = 1 })
-            textFade:Play()
-            task.wait(1)
-            screenGui:Destroy()
+        startInfectionSequence("Controllable")
+    end })
+    InfectionSection:Button({ Title = "Fake Non-Controllable Infected", Callback = function()
+        if not canInfect then
+            pcall(function() if WindUI then WindUI:Notify({ Title = "Infection", Content = "You must respawn before starting a new infection.", Duration = 3 }) end end)
+            return
         end
-    })
+        if InfectionActive then
+            pcall(function() if WindUI then WindUI:Notify({ Title = "Infection", Content = "Already active!", Duration = 2 }) end end)
+            return
+        end
+        startInfectionSequence("NonControllable")
+    end })
+    InfectionSection:Button({ Title = "Get Infected [BETA]", Callback = function()
+        if not canInfect then
+            pcall(function() if WindUI then WindUI:Notify({ Title = "Infection", Content = "You must respawn before starting a new infection.", Duration = 3 }) end end)
+            return
+        end
+        if InfectionActive then
+            pcall(function() if WindUI then WindUI:Notify({ Title = "Infection", Content = "Already active!", Duration = 2 }) end end)
+            return
+        end
+        local char = LocalPlayer.Character
+        if not char then return end
+        local humanoid = char:FindFirstChildOfClass("Humanoid")
+        if not humanoid then return end
+        if humanoid.Health < 100 then
+            pcall(function() if WindUI then WindUI:Notify({ Title = "Infection Failed", Content = "Sentinel was unable to infect you. You do not meet all the requirements (100 HP+).", Duration = 7 }) end end)
+            return
+        end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+        local originalPos = hrp.CFrame
 
-    local AnimatorSection = Tabs.Player:AddSection("Animator")
-    local animatorToggle = AnimatorSection:AddToggle("AnimatorApplyToggle", {
-        Title = "Apply Animator Config",
-        Default = false,
-        Callback = function(v)
-            Config.AnimatorEnabled = v
-            if not v then
-                stopAllAnimatorTracks()
-                animatorLastState = nil
-            end
-        end
-    })
-    storeComponent("AnimatorEnabled", animatorToggle)
+        local screenGui = Instance.new("ScreenGui")
+        screenGui.Name = "SentinelInfectionOverlay"
+        screenGui.Parent = CoreGui
+        screenGui.IgnoreGuiInset = true
 
-    local idleDropdown = AnimatorSection:AddDropdown("IdleAnimDropdown", {
-        Title = "Idle Animation",
-        Values = idleAnimNames,
-        Default = nil,
-        Callback = function(value)
-            Config.AnimatorIdleAnimName = value
-        end
-    })
-    storeComponent("AnimatorIdleAnimName", idleDropdown)
+        local blackFrame = Instance.new("Frame")
+        blackFrame.Size = UDim2.new(1, 0, 1, 0)
+        blackFrame.BackgroundColor3 = Color3.new(0, 0, 0)
+        blackFrame.BorderSizePixel = 0
+        blackFrame.Parent = screenGui
 
-    local walkDropdown = AnimatorSection:AddDropdown("WalkAnimDropdown", {
-        Title = "Walk Animation",
-        Values = walkAnimNames,
-        Default = nil,
-        Callback = function(value)
-            Config.AnimatorWalkAnimName = value
-        end
-    })
-    storeComponent("AnimatorWalkAnimName", walkDropdown)
+        local textLabel = Instance.new("TextLabel")
+        textLabel.Size = UDim2.new(1, 0, 0.2, 0)
+        textLabel.Position = UDim2.new(0, 0, 0.4, 0)
+        textLabel.BackgroundTransparency = 1
+        textLabel.Text = "SENTINEL IS WORKING ON REAL INFECTION..."
+        textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        textLabel.Font = Enum.Font.GothamBold
+        textLabel.TextSize = 24
+        textLabel.TextStrokeTransparency = 0.5
+        textLabel.Parent = screenGui
 
-    local runDropdown = AnimatorSection:AddDropdown("RunAnimDropdown", {
-        Title = "Run Animation",
-        Values = runAnimNames,
-        Default = nil,
-        Callback = function(value)
-            Config.AnimatorRunAnimName = value
-        end
-    })
-    storeComponent("AnimatorRunAnimName", runDropdown)
+        local particles = {}
+        for i = 1, 20 do
+            local part = Instance.new("Frame")
+            part.Size = UDim2.new(0, 4, 0, 4)
+            part.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+            part.BackgroundTransparency = 0.5
+            part.Position = UDim2.new(math.random(), 0, math.random(), 0)
+            part.Parent = screenGui
+            table.insert(particles, part)
 
-    local CustomizationSection = Tabs.Player:AddSection("Customization")
-    CustomizationSection:AddInput("CharacterNameInput", {
-        Title = "Character Name",
-        Default = "",
-        Placeholder = "Enter name",
-        Callback = function(value)
-            Config.CharacterName = value
-            applyNametags(LocalPlayer.Character)
+            local targetY = math.random() * 0.3
+            local duration = math.random() * 2 + 1
+            local tween = TweenService:Create(part, TweenInfo.new(duration, Enum.EasingStyle.Linear), {
+                Position = UDim2.new(part.Position.X.Scale + math.random(-0.1, 0.1), 0, targetY, 0),
+                BackgroundTransparency = 1
+            })
+            tween:Play()
+            tween.Completed:Connect(function()
+                part:Destroy()
+            end)
         end
-    })
-    CustomizationSection:AddInput("CharacterRankInput", {
-        Title = "Rank",
-        Default = "",
-        Placeholder = "Enter rank",
-        Callback = function(value)
-            Config.CharacterRank = value
-            applyNametags(LocalPlayer.Character)
-        end
-    })
-    local tagcolor = CustomizationSection:AddColorpicker("TagColorPicker", {
-        Title = "Nametag Color",
-        Default = Config.TagColor,
-        Callback = function(value)
-            Config.TagColor = value
-            applyNametags(LocalPlayer.Character)
-        end
-    })
-    storeComponent("TagColor", tagcolor)
 
-    local teamdropdown = CustomizationSection:AddDropdown("TeamDropdown", {
-        Title = "Team",
-        Values = {"Menlo", "RIF", "RSU"},
-        Default = "Menlo",
-        Callback = function(value)
-            Config.Team = value
-            changeTeam(value)
+        -- Teleport 1.5 studs lower
+        local targetPos = Vector3.new(-90, 46.8 - 1.5, -1759)
+        teleportTo(targetPos)
+        task.wait(3)
+        char:PivotTo(originalPos)
+        task.wait(0.5)
+
+        local tweenInfo = TweenInfo.new(1, Enum.EasingStyle.Linear)
+        local fadeOut = TweenService:Create(blackFrame, tweenInfo, { BackgroundTransparency = 1 })
+        fadeOut:Play()
+        local textFade = TweenService:Create(textLabel, tweenInfo, { TextTransparency = 1 })
+        textFade:Play()
+        task.wait(1)
+        screenGui:Destroy()
+    end })
+
+    local AnimatorSection = tab:Section({Title = "Animator", Opened = true})
+    AnimatorSection:Toggle({ Title = "Apply Animator Config", Default = false, Callback = function(v)
+        Config.AnimatorEnabled = v
+        if not v then
+            stopAllAnimatorTracks()
+            animatorLastState = nil
         end
-    })
-    storeComponent("Team", teamdropdown)
+    end })
+    AnimatorSection:Dropdown({ Title = "Idle Animation", Values = idleAnimNames, Default = nil, Callback = function(value) Config.AnimatorIdleAnimName = value end })
+    AnimatorSection:Dropdown({ Title = "Walk Animation", Values = walkAnimNames, Default = nil, Callback = function(value) Config.AnimatorWalkAnimName = value end })
+    AnimatorSection:Dropdown({ Title = "Run Animation", Values = runAnimNames, Default = nil, Callback = function(value) Config.AnimatorRunAnimName = value end })
+
+    local CustomizationSection = tab:Section({Title = "Customization", Opened = true})
+    CustomizationSection:Input({ Title = "Character Name", Default = "", Placeholder = "Enter name", Callback = function(value) Config.CharacterName = value; applyNametags(LocalPlayer.Character) end })
+    CustomizationSection:Input({ Title = "Rank", Default = "", Placeholder = "Enter rank", Callback = function(value) Config.CharacterRank = value; applyNametags(LocalPlayer.Character) end })
+    CustomizationSection:Colorpicker({ Title = "Nametag Color", Default = Config.TagColor, Callback = function(value) Config.TagColor = value; applyNametags(LocalPlayer.Character) end })
+    CustomizationSection:Dropdown({ Title = "Team", Values = {"Menlo", "RIF", "RSU"}, Default = "Menlo", Callback = function(value) Config.Team = value; changeTeam(value) end })
+
+    -- Chass Section
+    local ChassSection = tab:Section({Title = "Chass Settings [BETA]", Opened = true})
+    ChassSection:Toggle({ Title = "Enable Chass", Default = false, Callback = function(v)
+        Config.ChassEnabled = v
+        if not v then
+            Chass_clearAll()
+        end
+    end })
+    ChassSection:Slider({ Title = "Detection Radius", Value = {Min = 10, Max = 200, Default = 60}, Rounding = 0, Enabled = true, Callback = function(v) Config.ChassDetectionRadius = v end })
+
 end
 
-local function CreateCombatTab()
-    local WeaponActionsSection = Tabs.Combat:AddSection("Fists Settings")
-    local gattack = WeaponActionsSection:AddToggle("GAttackToggle", { Title = "Enable G-Key Attack", Default = true })
-    gattack:OnChanged(function(v) Config.GAttackEnabled = v end)
-    storeComponent("GAttackEnabled", gattack)
+do
+    local tab = Tabs.Combat
+    
+    local WeaponActionsSection = tab:Section({Title = "Fists Settings", Opened = true})
+    WeaponActionsSection:Toggle({ Title = "Enable G-Key Attack", Default = true, Callback = function(v) Config.GAttackEnabled = v end })
+    WeaponActionsSection:Toggle({ Title = "Bypass Client Cooldowns", Default = false, Callback = function(v) Config.BypassCombatCooldowns = v end })
+    WeaponActionsSection:Toggle({ Title = "Auto-Spam Attack", Default = false, Callback = function(v) Config.AutoSpamAttack = v end })
 
-    local bypasscd = WeaponActionsSection:AddToggle("BypassCDToggle", { Title = "Bypass Client Cooldowns", Default = false })
-    bypasscd:OnChanged(function(v) Config.BypassCombatCooldowns = v end)
-    storeComponent("BypassCombatCooldowns", bypasscd)
+local CustomFinisherToggle = WeaponActionsSection:Toggle({
+    Title = "Custom Finisher [ALPHA]",
+    Default = false,
+    Callback = function(v) 
+        Config.CustomFinisherEnabled = v 
+    end
+})
 
-    local autospam = WeaponActionsSection:AddToggle("AutoSpamToggle", { Title = "Auto-Spam Attack", Default = false })
-    autospam:OnChanged(function(v) Config.AutoSpamAttack = v end)
-    storeComponent("AutoSpamAttack", autospam)
+CustomFinisherToggle:Lock()
 
-    local GunModsSection = Tabs.Combat:AddSection("Gun Mod")
-    local antirecoil = GunModsSection:AddToggle("AntiRecoilToggle", { Title = "No Recoil [ALPHA]", Default = false })
-    antirecoil:OnChanged(function(v) Config.AntiCamShake = v end)
-    storeComponent("AntiCamShake", antirecoil)
+    local GunModsSection = tab:Section({Title = "Gun Mod", Opened = true})
 
-    local hitbox = GunModsSection:AddToggle("ExpandHitbox", { Title = "Hitbox Expander", Default = false })
-    hitbox:OnChanged(function(v)
+local NoRecoilToggle = GunModsSection:Toggle({
+    Title = "No Recoil [ALPHA]",
+    Default = false,
+    Callback = function(v) 
+        Config.AntiCamShake = v 
+    end
+})
+
+NoRecoilToggle:Lock()
+
+    GunModsSection:Toggle({ Title = "Hitbox Expander", Default = false, Callback = function(v)
         HitboxEnabled = v
         UpdateAllHitboxes(HitboxEnabled)
-    end)
-    storeComponent("HitboxEnabled", hitbox)
+    end })
+    GunModsSection:Toggle({ Title = "Silencer", Default = false, Callback = function(v) Config.SilencerEnabled = v; updateSilencers(v) end })
 
-    local silencer = GunModsSection:AddToggle("SilencerToggle", { Title = "Silencer", Default = false })
-    silencer:OnChanged(function(v)
-        Config.SilencerEnabled = v
-        updateSilencers(v)
-    end)
-    storeComponent("SilencerEnabled", silencer)
-
-    local ShieldRemoverSection = Tabs.Combat:AddSection("Shield Remover")
-    ShieldRemoverSection:AddButton({ Title = "Delete All Shields", Callback = function()
+    local ShieldRemoverSection = tab:Section({Title = "Shield Remover", Opened = true})
+    ShieldRemoverSection:Button({ Title = "Delete All Shields", Callback = function()
         for _, obj in ipairs(workspace:GetDescendants()) do
             if obj.Name == "Shield" then obj:Destroy() end
         end
     end })
-    ShieldRemoverSection:AddToggle("AutoShieldRemoval", { Title = "Auto-Remove Shields", Default = false }):OnChanged(function(v)
+    ShieldRemoverSection:Toggle({ Title = "Auto-Remove Shields", Default = false, Callback = function(v)
         AutoShieldRemovalActive = v
         if v then
             for _, obj in ipairs(workspace:GetDescendants()) do
@@ -2442,11 +2915,13 @@ local function CreateCombatTab()
                 AutoShieldRemovalConnection = nil
             end
         end
-    end)
+    end })
 end
 
-local function CreateWorldTab()
-    local TeleportSection = Tabs.World:AddSection("Teleport")
+do
+    local tab = Tabs.World
+    
+    local TeleportSection = tab:Section({Title = "Teleport", Opened = true})
     for sectorName, points in pairs(teleportPoints) do
         local optionNames = {}
         local positionMapping = {}
@@ -2455,49 +2930,19 @@ local function CreateWorldTab()
             table.insert(optionNames, locationName)
             positionMapping[locationName] = coords
         end
-        TeleportSection:AddDropdown(sectorName .. "Dropdown", {
-            Title = sectorName,
-            Values = optionNames,
-            Default = optionNames[1],
-            Callback = function(selectedValue)
-                local targetPosition = positionMapping[selectedValue]
-                if targetPosition then
-                    teleportTo(targetPosition)
-                end
+        TeleportSection:Dropdown({ Title = sectorName, Values = optionNames, Default = optionNames[1], Callback = function(selectedValue)
+            local targetPosition = positionMapping[selectedValue]
+            if targetPosition then
+                teleportTo(targetPosition)
             end
-        })
+        end })
     end
 
-    local XraySection = Tabs.World:AddSection("Xray Settings [BETA]")
-    local xraytoggle = XraySection:AddToggle("XrayToggle", { Title = "Enable X-Ray", Default = false })
-    xraytoggle:OnChanged(function(v)
-        XrayEnabled = v
-        updateXray()
-    end)
-    storeComponent("Xray", xraytoggle)
-
-    local xraydist = XraySection:AddSlider("XrayDistanceSlider", { Title = "Distance", Min = 1, Max = 1000, Default = 30, Rounding = 0 })
-    xraydist:OnChanged(function(v)
-        XrayDistance = v
-        if XrayEnabled then updateXray() end
-    end)
-    storeComponent("XrayDistance", xraydist)
-
-    local xraytrans = XraySection:AddSlider("XrayTransparencySlider", { Title = "Transparency", Min = 0, Max = 1, Default = 0.3, Rounding = 2 })
-    xraytrans:OnChanged(function(v)
-        XrayTransparency = v
-        updateXrayMaterialAndTransparency()
-        if XrayEnabled then updateXray() end
-    end)
-    storeComponent("XrayTransparency", xraytrans)
-
-    local xraymat = XraySection:AddDropdown("XrayMaterialDropdown", {
-        Title = "Material",
-        Values = {"Plastic", "Neon", "ForceField", "Glass", "SmoothPlastic"},
-        Default = "ForceField",
-        Multi = false
-    })
-    xraymat:OnChanged(function(v)
+    local XraySection = tab:Section({Title = "Xray Settings [BETA]", Opened = true})
+    XraySection:Toggle({ Title = "Enable X-Ray", Default = false, Callback = function(v) XrayEnabled = v; updateXray() end })
+    XraySection:Slider({ Title = "Distance", Value = {Min = 1, Max = 1000, Default = 30}, Rounding = 0, Enabled = true, Callback = function(v) XrayDistance = v; if XrayEnabled then updateXray() end end })
+    XraySection:Slider({ Title = "Transparency", Value = {Min = 0, Max = 1, Default = 0.3}, Rounding = 2, Enabled = true, Callback = function(v) XrayTransparency = v; updateXrayMaterialAndTransparency(); if XrayEnabled then updateXray() end end })
+    XraySection:Dropdown({ Title = "Material", Values = {"Plastic", "Neon", "ForceField", "Glass", "SmoothPlastic"}, Default = "ForceField", Callback = function(v)
         Config.XrayMaterial = v
         local materialMap = {
             Plastic = Enum.Material.Plastic,
@@ -2509,31 +2954,15 @@ local function CreateWorldTab()
         XrayMaterial = materialMap[v] or Enum.Material.ForceField
         updateXrayMaterialAndTransparency()
         if XrayEnabled then updateXray() end
-    end)
-    storeComponent("XrayMaterial", xraymat)
+    end })
 
-    local CameraSection = Tabs.World:AddSection("Camera Settings")
-    local unlockthird = CameraSection:AddToggle("UnlockThirdPerson", { Title = "Unlock Third Person (Zoomable)", Default = false })
-    unlockthird:OnChanged(function(v)
-        Config.UnlockThirdPerson = v
-    end)
-    storeComponent("UnlockThirdPerson", unlockthird)
+    local CameraSection = tab:Section({Title = "Camera Settings", Opened = true})
+    CameraSection:Toggle({ Title = "Unlock Third Person (Zoomable)", Default = false, Callback = function(v) Config.UnlockThirdPerson = v end })
+    CameraSection:Toggle({ Title = "Custom FOV", Default = false, Callback = function(v) Config.CustomFOVEnabled = v end })
+    CameraSection:Slider({ Title = "Field of View", Value = {Min = 1, Max = 120, Default = 70}, Rounding = 0, Enabled = true, Callback = function(v) Config.FOVValue = v end })
 
-    local fovtoggle = CameraSection:AddToggle("CustomFOVToggle", { Title = "Custom FOV", Default = false })
-    fovtoggle:OnChanged(function(v)
-        Config.CustomFOVEnabled = v
-    end)
-    storeComponent("CustomFOVEnabled", fovtoggle)
-
-    local fovslider = CameraSection:AddSlider("FOVSlider", { Title = "Field of View", Min = 1, Max = 120, Default = 70, Rounding = 0 })
-    fovslider:OnChanged(function(v)
-        Config.FOVValue = v
-    end)
-    storeComponent("FOVValue", fovslider)
-
-    local AtmosphereSection = Tabs.World:AddSection("Atmosphere")
-    local fullbright = AtmosphereSection:AddToggle("FullBright", { Title = "Full Bright", Default = false })
-    fullbright:OnChanged(function(v)
+    local AtmosphereSection = tab:Section({Title = "Atmosphere", Opened = true})
+    AtmosphereSection:Toggle({ Title = "Full Bright", Default = false, Callback = function(v)
         Config.FullBright = v
         if v then
             Lighting.Ambient = Color3.fromRGB(255, 255, 255)
@@ -2542,11 +2971,8 @@ local function CreateWorldTab()
             Lighting.Ambient = OrigAmbient
             Lighting.Brightness = OrigBrightness
         end
-    end)
-    storeComponent("FullBright", fullbright)
-
-    local nofog = AtmosphereSection:AddToggle("NoFog", { Title = "No Fog", Default = false })
-    nofog:OnChanged(function(v)
+    end })
+    AtmosphereSection:Toggle({ Title = "No Fog", Default = false, Callback = function(v)
         Config.NoFog = v
         if v then
             Lighting.FogEnd = 999999999
@@ -2555,22 +2981,15 @@ local function CreateWorldTab()
             Lighting.FogEnd = OrigFogEnd
             Lighting.FogStart = OrigFogStart
         end
-    end)
-    storeComponent("NoFog", nofog)
+    end })
 
-    local RadiationsSection = Tabs.World:AddSection("Radiations")
-    local hazard = RadiationsSection:AddToggle("HazardImmToggle", { Title = "Anti-Radiation Effect", Default = false })
-    hazard:OnChanged(function(v) Config.ImmuneLookHazard = v end)
-    storeComponent("ImmuneLookHazard", hazard)
+    local RadiationsSection = tab:Section({Title = "Radiations", Opened = true})
+    RadiationsSection:Toggle({ Title = "Anti-Radiation Effect", Default = false, Callback = function(v) Config.ImmuneLookHazard = v end })
+    RadiationsSection:Button({ Title = "Remove Elephant Foot (LookAtMe)", Callback = removeElephantFoot })
 
-    RadiationsSection:AddButton({ Title = "Remove Elephant Foot (LookAtMe)", Callback = removeElephantFoot })
-
-    local VisualMechanicsSection = Tabs.World:AddSection("Screen Customization")
-    local autowipe = VisualMechanicsSection:AddToggle("AutoWipe", { Title = "Auto-Wipe Screen Blood", Default = false })
-    autowipe:OnChanged(function(v) Config.AutoWipeBlood = v end)
-    storeComponent("AutoWipeBlood", autowipe)
-
-    VisualMechanicsSection:AddButton({ Title = "Instant Clean Screen", Callback = function()
+    local VisualMechanicsSection = tab:Section({Title = "Screen Customization", Opened = true})
+    VisualMechanicsSection:Toggle({ Title = "Auto-Wipe Screen Blood", Default = false, Callback = function(v) Config.AutoWipeBlood = v end })
+    VisualMechanicsSection:Button({ Title = "Instant Clean Screen", Callback = function()
         local gui = LocalPlayer.PlayerGui:FindFirstChild("Gui")
         if gui then
             for _, v in pairs(gui:GetChildren()) do
@@ -2583,17 +3002,16 @@ local function CreateWorldTab()
         end
     end })
 
-    local WorldNVGSection = Tabs.World:AddSection("Night Vision & Gasmask")
-    WorldNVGSection:AddButton({ Title = "Delete Gasmask", Callback = function()
+    local WorldNVGSection = tab:Section({Title = "Night Vision & Gasmask", Opened = true})
+    WorldNVGSection:Button({ Title = "Delete Gasmask", Callback = function()
         local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
         if playerGui then
             local gasmaskGui = playerGui:FindFirstChild("Gasmask")
             if gasmaskGui then gasmaskGui:Destroy() end
         end
     end })
-    WorldNVGSection:AddButton({ Title = "Break Gasmask", Callback = BreakGasmask })
-    local infnv = WorldNVGSection:AddToggle("InfiniteNightVisionToggle", { Title = "Infinite Night Vision", Default = false })
-    infnv:OnChanged(function(v)
+    WorldNVGSection:Button({ Title = "Break Gasmask", Callback = BreakGasmask })
+    WorldNVGSection:Toggle({ Title = "Infinite Night Vision", Default = false, Callback = function(v)
         Config.InfiniteNightVision = v
         if v then
             if InfiniteNVConnection then InfiniteNVConnection:Disconnect() end
@@ -2695,106 +3113,73 @@ local function CreateWorldTab()
                 if nvHUD then nvHUD.Enabled = false end
             end
         end
-    end)
-    storeComponent("InfiniteNightVision", infnv)
+    end })
 
-    local MapRemoverSection = Tabs.World:AddSection("Map Remover")
-    MapRemoverSection:AddButton({ Title = "Remove Arabic dud", Callback = removeArabicDud })
-    MapRemoverSection:AddButton({ Title = "Remove Lobby Music", Callback = removeLobbyMusic })
-    MapRemoverSection:AddButton({ Title = "Delete ALL doors", Callback = deleteAllDoors })
+    local MapRemoverSection = tab:Section({Title = "Map Remover", Opened = true})
+    MapRemoverSection:Button({ Title = "Remove Arabic dud", Callback = removeArabicDud })
+    MapRemoverSection:Button({ Title = "Remove Lobby Music", Callback = removeLobbyMusic })
+    MapRemoverSection:Button({ Title = "Delete ALL doors", Callback = deleteAllDoors })
 end
 
-local function CreateFunTab()
-    local ToggleAnimSection = Tabs.Fun:AddSection("Idle Animations (Toggles)")
+do
+    local tab = Tabs.Fun
+    local ToggleAnimSection = tab:Section({Title = "Idle Animations (Toggles)", Opened = true})
     for name, id in pairs(toggleAnims) do
-        ToggleAnimSection:AddToggle(name, {
-            Title = name,
-            Default = false,
-            Callback = function(v)
-                playToggleAnim(id, v)
-            end
-        })
+        ToggleAnimSection:Toggle({ Title = name, Default = false, Callback = function(v) playToggleAnim(id, v) end })
     end
 
-    local ButtonAnimSection = Tabs.Fun:AddSection("One-Shot Animations (Buttons)")
+    local ButtonAnimSection = tab:Section({Title = "One-Shot Animations (Buttons)", Opened = true})
     for name, id in pairs(buttonAnims) do
-        ButtonAnimSection:AddButton({
-            Title = name,
-            Callback = function()
-                playButtonAnim(id)
-            end
-        })
+        ButtonAnimSection:Button({ Title = name, Callback = function() playButtonAnim(id) end })
     end
 end
 
-local function CreateESPTab()
-    local GlobalESPSection = Tabs.ESP:AddSection("ESP Settings")
-    local maxdist = GlobalESPSection:AddSlider("MaxDist", { Title = "Max ESP Distance", Min = 0, Max = 1000, Default = 250, Rounding = 0 })
-    maxdist:OnChanged(function(v) Config.MaxDistance = v end)
-    storeComponent("MaxDistance", maxdist)
+do
+    local tab = Tabs.ESP
+    
+    local GlobalESPSection = tab:Section({Title = "ESP Settings", Opened = true})
+    GlobalESPSection:Slider({ Title = "Max ESP Distance", Value = {Min = 0, Max = 1000, Default = 250}, Rounding = 0, Enabled = true, Callback = function(v) Config.MaxDistance = v end })
 
-    local filltrans = GlobalESPSection:AddSlider("FillTrans", { Title = "Highlight Fill Transparency", Min = 0, Max = 1, Default = 0.7, Rounding = 1 })
-    filltrans:OnChanged(function(v) Config.HLFillTrans = v end)
-    storeComponent("HLFillTrans", filltrans)
+GlobalESPSection:Slider({ 
+    Title = "Highlight Fill Transparency", 
+    Value = {Min = 0, Max = 100, Default = 70}, 
+    Rounding = 0, 
+    Enabled = true, 
+    Callback = function(v) 
+        Config.HLFillTrans = v / 100 
+    end 
+})
 
-    local outtrans = GlobalESPSection:AddSlider("OutTrans", { Title = "Highlight Outline Transparency", Min = 0, Max = 1, Default = 1.0, Rounding = 1 })
-    outtrans:OnChanged(function(v) Config.HLOutlineTrans = v end)
-    storeComponent("HLOutlineTrans", outtrans)
+GlobalESPSection:Slider({ 
+    Title = "Highlight Outline Transparency", 
+    Value = {Min = 0, Max = 100, Default = 100}, 
+    Rounding = 0, 
+    Enabled = true, 
+    Callback = function(v) 
+        Config.HLOutlineTrans = v / 100 
+    end 
+})
 
-    local PlayerESPSection = Tabs.ESP:AddSection("Player ESP")
-    local hlplayer = PlayerESPSection:AddToggle("HLPlayer", { Title = "Highlight Player", Default = false })
-    hlplayer:OnChanged(function(v) Config.HighlightPlayer = v end)
-    storeComponent("HighlightPlayer", hlplayer)
+    local PlayerESPSection = tab:Section({Title = "Player ESP", Opened = true})
+    PlayerESPSection:Toggle({ Title = "Highlight Player", Default = false, Callback = function(v) Config.HighlightPlayer = v end })
+    PlayerESPSection:Toggle({ Title = "ESP Health Player", Default = false, Callback = function(v) Config.HealthPlayer = v end })
+    PlayerESPSection:Toggle({ Title = "Tracer Player", Default = false, Callback = function(v) Config.TracerPlayer = v end })
+    PlayerESPSection:Colorpicker({ Title = "Player ESP Color", Default = Config.ColorPlayer, Callback = function(v) Config.ColorPlayer = v end })
 
-    local hplayer = PlayerESPSection:AddToggle("HPlayer", { Title = "ESP Health Player", Default = false })
-    hplayer:OnChanged(function(v) Config.HealthPlayer = v end)
-    storeComponent("HealthPlayer", hplayer)
+    local FriendESPSection = tab:Section({Title = "Friend ESP [ALPHA]", Opened = true})
+    FriendESPSection:Toggle({ Title = "Highlight Friends", Default = false, Callback = function(v) Config.HighlightFriends = v end })
+    FriendESPSection:Toggle({ Title = "ESP Health Friend", Default = false, Callback = function(v) Config.HealthFriends = v end })
+    FriendESPSection:Toggle({ Title = "Tracer Friend", Default = false, Callback = function(v) Config.TracerFriends = v end })
+    FriendESPSection:Colorpicker({ Title = "Friend ESP Color", Default = Config.ColorFriends, Callback = function(v) Config.ColorFriends = v end })
 
-    local tplayer = PlayerESPSection:AddToggle("TPlayer", { Title = "Tracer Player", Default = false })
-    tplayer:OnChanged(function(v) Config.TracerPlayer = v end)
-    storeComponent("TracerPlayer", tplayer)
+    local MobESPSection = tab:Section({Title = "Entities ESP", Opened = true})
+    MobESPSection:Toggle({ Title = "Highlight Entities", Default = false, Callback = function(v) Config.HighlightMobs = v end })
+    MobESPSection:Toggle({ Title = "ESP Health EntitiesMobs", Default = false, Callback = function(v) Config.HealthMobs = v end })
+    MobESPSection:Toggle({ Title = "Tracer Entities", Default = false, Callback = function(v) Config.TracerMobs = v end })
+    MobESPSection:Colorpicker({ Title = "Entities ESP Color", Default = Config.ColorMobs, Callback = function(v) Config.ColorMobs = v end })
 
-    local cplayer = PlayerESPSection:AddColorpicker("CPPlayer", { Title = "Player ESP Color", Default = Config.ColorPlayer })
-    cplayer:OnChanged(function(v) Config.ColorPlayer = v end)
-    storeComponent("ColorPlayer", cplayer)
-
-    local FriendESPSection = Tabs.ESP:AddSection("Friend ESP [ALPHA]")
-    local hlfriends = FriendESPSection:AddToggle("HLFriends", { Title = "Highlight Friends", Default = false })
-    hlfriends:OnChanged(function(v) Config.HighlightFriends = v end)
-    storeComponent("HighlightFriends", hlfriends)
-
-    local hfriends = FriendESPSection:AddToggle("HFriends", { Title = "ESP Health Friend", Default = false })
-    hfriends:OnChanged(function(v) Config.HealthFriends = v end)
-    storeComponent("HealthFriends", hfriends)
-
-    local tfriends = FriendESPSection:AddToggle("TFriends", { Title = "Tracer Friend", Default = false })
-    tfriends:OnChanged(function(v) Config.TracerFriends = v end)
-    storeComponent("TracerFriends", tfriends)
-
-    local cfriends = FriendESPSection:AddColorpicker("CPFriends", { Title = "Friend ESP Color", Default = Config.ColorFriends })
-    cfriends:OnChanged(function(v) Config.ColorFriends = v end)
-    storeComponent("ColorFriends", cfriends)
-
-    local MobESPSection = Tabs.ESP:AddSection("Entities ESP")
-    local hlmobs = MobESPSection:AddToggle("HLMobs", { Title = "Highlight Entities", Default = false })
-    hlmobs:OnChanged(function(v) Config.HighlightMobs = v end)
-    storeComponent("HighlightMobs", hlmobs)
-
-    local hmobs = MobESPSection:AddToggle("HMobs", { Title = "ESP Health EntitiesMobs", Default = false })
-    hmobs:OnChanged(function(v) Config.HealthMobs = v end)
-    storeComponent("HealthMobs", hmobs)
-
-    local tmobs = MobESPSection:AddToggle("TMobs", { Title = "Tracer Entities", Default = false })
-    tmobs:OnChanged(function(v) Config.TracerMobs = v end)
-    storeComponent("TracerMobs", tmobs)
-
-    local cmobs = MobESPSection:AddColorpicker("CPMobs", { Title = "Entities ESP Color", Default = Config.ColorMobs })
-    cmobs:OnChanged(function(v) Config.ColorMobs = v end)
-    storeComponent("ColorMobs", cmobs)
-
-    local OtherESPSection = Tabs.ESP:AddSection("Other ESP")
-    local hllandmines = OtherESPSection:AddToggle("HighlightLandmines", { Title = "Highlight Landmines", Default = false })
-    hllandmines:OnChanged(function(v)
+    local OtherESPSection = tab:Section({Title = "Other ESP", Opened = true})
+    OtherESPSection:Toggle({ Title = "Highlight Landmines", Default = false, Callback = function(v)
         Config.HighlightLandmines = v
         if not v then
             for _, hl in pairs(LandmineHighlights) do
@@ -2802,23 +3187,14 @@ local function CreateESPTab()
             end
             table.clear(LandmineHighlights)
         end
-    end)
-    storeComponent("HighlightLandmines", hllandmines)
-
-    local clandmines = OtherESPSection:AddColorpicker("ColorLandmines", {
-        Title = "Landmines Color",
-        Default = Config.ColorLandmines,
-        Callback = function(v)
-            Config.ColorLandmines = v
-            for _, hl in pairs(LandmineHighlights) do
-                if hl then hl.FillColor = v end
-            end
+    end })
+    OtherESPSection:Colorpicker({ Title = "Landmines Color", Default = Config.ColorLandmines, Callback = function(v)
+        Config.ColorLandmines = v
+        for _, hl in pairs(LandmineHighlights) do
+            if hl then hl.FillColor = v end
         end
-    })
-    storeComponent("ColorLandmines", clandmines)
-
-    local hlgenerators = OtherESPSection:AddToggle("HighlightGenerators", { Title = "Highlight Generators", Default = false })
-    hlgenerators:OnChanged(function(v)
+    end })
+    OtherESPSection:Toggle({ Title = "Highlight Generators", Default = false, Callback = function(v)
         Config.HighlightGenerators = v
         if not v then
             for _, hl in pairs(GeneratorHighlights) do
@@ -2826,156 +3202,134 @@ local function CreateESPTab()
             end
             table.clear(GeneratorHighlights)
         end
-    end)
-    storeComponent("HighlightGenerators", hlgenerators)
-
-    local cgenerators = OtherESPSection:AddColorpicker("ColorGenerators", {
-        Title = "Generators Color",
-        Default = Config.ColorGenerators,
-        Callback = function(v)
-            Config.ColorGenerators = v
-            for _, hl in pairs(GeneratorHighlights) do
-                if hl then hl.FillColor = v end
-            end
+    end })
+    OtherESPSection:Colorpicker({ Title = "Generators Color", Default = Config.ColorGenerators, Callback = function(v)
+        Config.ColorGenerators = v
+        for _, hl in pairs(GeneratorHighlights) do
+            if hl then hl.FillColor = v end
         end
-    })
-    storeComponent("ColorGenerators", cgenerators)
+    end })
 end
 
-local function CreateGameTab()
-    local TeleportationsSection = Tabs.Game:AddSection("Teleportations")
-    TeleportationsSection:AddButton({
-        Title = "Get Underequipped badge",
-        Callback = function()
-            local char = LocalPlayer.Character
-            if not char or not char:FindFirstChild("HumanoidRootPart") then return end
-            local hrp = char.HumanoidRootPart
+do
+    local tab = Tabs.Game
+    
+    local TeleportationsSection = tab:Section({Title = "Teleportations", Opened = true})
+    TeleportationsSection:Button({ Title = "Get Underequipped badge", Callback = function()
+        local char = LocalPlayer.Character
+        if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+        local hrp = char.HumanoidRootPart
 
-            local ZoneParts = Workspace:FindFirstChild("ZoneParts")
-            if not ZoneParts then
-                Fluent:Notify({ Title = "Error", Content = "ZoneParts not found", Duration = 3 })
-                return
-            end
-
-            local inSector = false
-            for _, v in ipairs(ZoneParts:GetChildren()) do
-                if v:IsA("BasePart") then
-                    local p = v.CFrame:PointToObjectSpace(hrp.Position)
-                    local s = v.Size * 0.5
-                    if math.abs(p.X) <= s.X and math.abs(p.Y) <= s.Y and math.abs(p.Z) <= s.Z then
-                        inSector = true
-                        break
-                    end
-                end
-            end
-
-            if not inSector then
-                Fluent:Notify({ Title = "Error", Content = "You are not in a sector.", Duration = 3 })
-                return
-            end
-
-            local backpack = LocalPlayer:FindFirstChild("Backpack")
-            if backpack and #backpack:GetChildren() > 5 then
-                Fluent:Notify({ Title = "Error", Content = "You are not classless (too many tools).", Duration = 3 })
-                return
-            end
-
-            local o = workspace:FindFirstChild("Classless_Badge")
-            if o then
-                char:PivotTo(o:GetPivot() * CFrame.new(0, 2, 0))
-            else
-                Fluent:Notify({ Title = "Error", Content = "Classless_Badge not found", Duration = 3 })
-            end
+        local ZoneParts = Workspace:FindFirstChild("ZoneParts")
+        if not ZoneParts then
+            pcall(function() if WindUI then WindUI:Notify({ Title = "Error", Content = "ZoneParts not found", Duration = 3 }) end end)
+            return
         end
-    })
-    TeleportationsSection:AddButton({
-        Title = "Go to Restricted Server",
-        Callback = function()
-            local screenGui = Instance.new("ScreenGui")
-            screenGui.Name = "SentinelRestrictedOverlay"
-            screenGui.Parent = CoreGui
-            screenGui.IgnoreGuiInset = true
 
-            local blackFrame = Instance.new("Frame")
-            blackFrame.Size = UDim2.new(1, 0, 1, 0)
-            blackFrame.BackgroundColor3 = Color3.new(0, 0, 0)
-            blackFrame.BorderSizePixel = 0
-            blackFrame.Parent = screenGui
-
-            local textLabel = Instance.new("TextLabel")
-            textLabel.Size = UDim2.new(1, 0, 0.2, 0)
-            textLabel.Position = UDim2.new(0, 0, 0.4, 0)
-            textLabel.BackgroundTransparency = 1
-            textLabel.Text = "Sentinel is teleporting you to a restricted server..."
-            textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-            textLabel.Font = Enum.Font.GothamBold
-            textLabel.TextSize = 24
-            textLabel.TextStrokeTransparency = 0.5
-            textLabel.Parent = screenGui
-
-            local particles = {}
-            for i = 1, 20 do
-                local part = Instance.new("Frame")
-                part.Size = UDim2.new(0, 4, 0, 4)
-                part.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
-                part.BackgroundTransparency = 0.5
-                part.Position = UDim2.new(math.random(), 0, math.random(), 0)
-                part.Parent = screenGui
-                table.insert(particles, part)
-
-                local targetY = math.random() * 0.3
-                local duration = math.random() * 2 + 1
-                local tween = TweenService:Create(part, TweenInfo.new(duration, Enum.EasingStyle.Linear), {
-                    Position = UDim2.new(part.Position.X.Scale + math.random(-0.1, 0.1), 0, targetY, 0),
-                    BackgroundTransparency = 1
-                })
-                tween:Play()
-                tween.Completed:Connect(function()
-                    part:Destroy()
-                end)
-            end
-
-            teleportToCFrame(RestrictedServerCFrame)
-        end
-    })
-
-    local UtilitiesSection = Tabs.Game:AddSection("Utilities")
-    local antiafk = UtilitiesSection:AddToggle("AntiAFKToggle", { Title = "Anti-AFK", Default = false })
-    antiafk:OnChanged(function(v)
-        Config.AntiAFKEnabled = v
-    end)
-    storeComponent("AntiAFKEnabled", antiafk)
-
-    local removeDeathConnection = nil
-    local removedeath = UtilitiesSection:AddToggle("RemoveDeathScreenToggle", {
-        Title = "Auto Remove Death Screen",
-        Default = false,
-        Callback = function(v)
-            Config.RemoveDeathScreen = v
-            if v then
-                local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-                if playerGui then
-                    local death = playerGui:FindFirstChild("Death")
-                    if death then death:Destroy() end
-                    if not removeDeathConnection then
-                        removeDeathConnection = playerGui.ChildAdded:Connect(function(child)
-                            if child.Name == "Death" and Config.RemoveDeathScreen then
-                                child:Destroy()
-                            end
-                        end)
-                    end
-                end
-            else
-                if removeDeathConnection then
-                    removeDeathConnection:Disconnect()
-                    removeDeathConnection = nil
+        local inSector = false
+        for _, v in ipairs(ZoneParts:GetChildren()) do
+            if v:IsA("BasePart") then
+                local p = v.CFrame:PointToObjectSpace(hrp.Position)
+                local s = v.Size * 0.5
+                if math.abs(p.X) <= s.X and math.abs(p.Y) <= s.Y and math.abs(p.Z) <= s.Z then
+                    inSector = true
+                    break
                 end
             end
         end
-    })
-    storeComponent("RemoveDeathScreen", removedeath)
 
-    local CoreGUISection = Tabs.Game:AddSection("CoreGUI")
+        if not inSector then
+            pcall(function() if WindUI then WindUI:Notify({ Title = "Error", Content = "You are not in a sector.", Duration = 3 }) end end)
+            return
+        end
+
+        local backpack = LocalPlayer:FindFirstChild("Backpack")
+        if backpack and #backpack:GetChildren() > 5 then
+            pcall(function() if WindUI then WindUI:Notify({ Title = "Error", Content = "You are not classless (too many tools).", Duration = 3 }) end end)
+            return
+        end
+
+        local o = workspace:FindFirstChild("Classless_Badge")
+        if o then
+            char:PivotTo(o:GetPivot() * CFrame.new(0, 2, 0))
+        else
+            pcall(function() if WindUI then WindUI:Notify({ Title = "Error", Content = "Classless_Badge not found", Duration = 3 }) end end)
+        end
+    end })
+    TeleportationsSection:Button({ Title = "Go to Restricted Server", Callback = function()
+        local screenGui = Instance.new("ScreenGui")
+        screenGui.Name = "SentinelRestrictedOverlay"
+        screenGui.Parent = CoreGui
+        screenGui.IgnoreGuiInset = true
+
+        local blackFrame = Instance.new("Frame")
+        blackFrame.Size = UDim2.new(1, 0, 1, 0)
+        blackFrame.BackgroundColor3 = Color3.new(0, 0, 0)
+        blackFrame.BorderSizePixel = 0
+        blackFrame.Parent = screenGui
+
+        local textLabel = Instance.new("TextLabel")
+        textLabel.Size = UDim2.new(1, 0, 0.2, 0)
+        textLabel.Position = UDim2.new(0, 0, 0.4, 0)
+        textLabel.BackgroundTransparency = 1
+        textLabel.Text = "Sentinel is teleporting you to a restricted server..."
+        textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        textLabel.Font = Enum.Font.GothamBold
+        textLabel.TextSize = 24
+        textLabel.TextStrokeTransparency = 0.5
+        textLabel.Parent = screenGui
+
+        local particles = {}
+        for i = 1, 20 do
+            local part = Instance.new("Frame")
+            part.Size = UDim2.new(0, 4, 0, 4)
+            part.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+            part.BackgroundTransparency = 0.5
+            part.Position = UDim2.new(math.random(), 0, math.random(), 0)
+            part.Parent = screenGui
+            table.insert(particles, part)
+
+            local targetY = math.random() * 0.3
+            local duration = math.random() * 2 + 1
+            local tween = TweenService:Create(part, TweenInfo.new(duration, Enum.EasingStyle.Linear), {
+                Position = UDim2.new(part.Position.X.Scale + math.random(-0.1, 0.1), 0, targetY, 0),
+                BackgroundTransparency = 1
+            })
+            tween:Play()
+            tween.Completed:Connect(function()
+                part:Destroy()
+            end)
+        end
+
+        teleportToCFrame(RestrictedServerCFrame)
+    end })
+
+    local UtilitiesSection = tab:Section({Title = "Utilities", Opened = true})
+    UtilitiesSection:Toggle({ Title = "Anti-AFK", Default = false, Callback = function(v) Config.AntiAFKEnabled = v end })
+    UtilitiesSection:Toggle({ Title = "Auto Remove Death Screen", Default = false, Callback = function(v)
+        Config.RemoveDeathScreen = v
+        if v then
+            local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+            if playerGui then
+                local death = playerGui:FindFirstChild("Death")
+                if death then death:Destroy() end
+                if not removeDeathConnection then
+                    removeDeathConnection = playerGui.ChildAdded:Connect(function(child)
+                        if child.Name == "Death" and Config.RemoveDeathScreen then
+                            child:Destroy()
+                        end
+                    end)
+                end
+            end
+        else
+            if removeDeathConnection then
+                removeDeathConnection:Disconnect()
+                removeDeathConnection = nil
+            end
+        end
+    end })
+
+    local CoreGUISection = tab:Section({Title = "CoreGUI", Opened = true})
     local ChatLoggerEnabled = false
     local function ToggleNativeChat(enable)
         if enable then
@@ -3010,87 +3364,67 @@ local function CreateGameTab()
             end
         end
     end
-    CoreGUISection:AddToggle("ChatLoggerToggle", { Title = "Show Native Chat (CoreGui)", Default = false }):OnChanged(function(v)
+    CoreGUISection:Toggle({ Title = "Show Native Chat (CoreGui)", Default = false, Callback = function(v)
         ChatLoggerEnabled = v
         ToggleNativeChat(v)
         if v then
-            Fluent:Notify({ Title = "Chat", Content = "Native chat interface enabled", Duration = 2 })
+            pcall(function() if WindUI then WindUI:Notify({ Title = "Chat", Content = "Native chat interface enabled", Duration = 2 }) end end)
         end
-    end)
+    end })
 end
 
-local function CreateAboutTab()
-    local AboutSection = Tabs.About:AddSection("Informations & Links")
-    AboutSection:AddButton({ Title = "Copy Discord Server Link", Callback = function()
+do
+    local tab = Tabs.About
+    local AboutSection = tab:Section({Title = "Links", Opened = true})  -- Changé le titre
+    
+    AboutSection:Button({ Title = "Copy Discord Server Link", Callback = function()
         local link = "https://discord.gg/hEzaXke2x"
         if setclipboard then setclipboard(link)
         else pcall(function() local tb = Instance.new("TextBox"); tb.Text = link; tb:CaptureFocus(); tb:ReleaseFocus(); tb:Destroy() end) end
-        Fluent:Notify({ Title = "Discord", Content = "Discord server link copied!", Duration = 3 })
+        pcall(function() if WindUI then WindUI:Notify({ Title = "Discord", Content = "Discord server link copied!", Duration = 3 }) end end)
     end })
-    AboutSection:AddButton({ Title = "Copy Rscripts.net Link", Callback = function()
+    
+    AboutSection:Button({ Title = "Copy Rscripts.net Link", Callback = function()
         local link = "https://rscripts.net/script/examination-oBz7"
         if setclipboard then setclipboard(link)
         else pcall(function() local tb = Instance.new("TextBox"); tb.Text = link; tb:CaptureFocus(); tb:ReleaseFocus(); tb:Destroy() end) end
-        Fluent:Notify({ Title = "Rscripts.net", Content = "Rscript Link copied", Duration = 3 })
+        pcall(function() if WindUI then WindUI:Notify({ Title = "Rscripts.net", Content = "Rscript Link copied", Duration = 3 }) end end)
     end })
-    AboutSection:AddParagraph({ Title = "Credits", Content = "-------------\nv.08.00.40\n-------------\nMain dev : x4tmq\nUnderequipped badge : expresso5184\nTesters : Sinitzyn - Χρήστος - Flare\n-------------\nStatus : Safe - Stable" })
-    AboutSection:AddParagraph({ Title = "Info", Content = "-------------\nv.08.00.40\n-------------\nIf the script don't work or some stuff bugs :\n- Restart ur exec\n- Restart roblox\n- And re execute this scrpt ! :D" })
 end
 
-local function CreateSettingsTab()
-    local SettingsSection = Tabs.Settings:AddSection("Theme")
-    local ThemeDropdown = SettingsSection:AddDropdown("Theme", {
-        Title = "Choose a theme",
-        Values = {"Light", "Dark", "Darker", "Rose", "Aqua", "Amethyst"},
-        Multi = false,
-        Default = "Darker",
-    })
-    ThemeDropdown:OnChanged(function(Value)
+do
+    local tab = Tabs.Settings
+    
+    local SettingsSection = tab:Section({Title = "Theme", Opened = true})
+    SettingsSection:Dropdown({ Title = "Choose a theme", Values = {"Light", "Dark", "Darker", "Rose", "Aqua", "Amethyst"}, Default = "Darker", Callback = function(Value)
         Config.Theme = Value
-        Fluent:SetTheme(Value)
-    end)
-    storeComponent("Theme", ThemeDropdown)
+        pcall(function() WindUI:SetTheme(Value) end)
+    end })
 
-    local SaveSection = Tabs.Settings:AddSection("Save [v1]")
-    local saveNameInput = SaveSection:AddInput("SaveNameInput", {
-        Title = "Config Name",
-        Default = "",
-        Placeholder = "Enter a name",
-        Callback = function(value)
+    local SaveSection = tab:Section({Title = "Save [ALPHA]", Opened = false})
+    local saveNameInput = SaveSection:Input({ Title = "Config Name", Default = "", Placeholder = "Enter a name", Callback = function(value) end })
+    SaveSection:Button({ Title = "Save Settings", Callback = function()
+        local name = saveNameInput.Value
+        if name == "" then
+            pcall(function() if WindUI then WindUI:Notify({ Title = "Error", Content = "Please enter a name", Duration = 3 }) end end)
+            return
         end
-    })
-
-    SaveSection:AddButton({
-        Title = "Save Settings",
-        Callback = function()
-            local name = saveNameInput.Value
-            if name == "" then
-                Fluent:Notify({ Title = "Error", Content = "Please enter a name", Duration = 3 })
-                return
+        local success, err = pcall(function()
+            local configCopy = table.clone(Config)
+            local data = HttpService:JSONEncode(configCopy)
+            if not isfolder("sentinel/configs/") then
+                makefolder("sentinel/configs/")
             end
-            local success, err = pcall(function()
-                local configCopy = table.clone(Config)
-                configCopy.Theme = ThemeDropdown.Value
-                local data = HttpService:JSONEncode(configCopy)
-                if not isfolder("sentinel/configs/") then
-                    makefolder("sentinel/configs/")
-                end
-                writefile("sentinel/configs/" .. name .. ".json", data)
-            end)
-            if success then
-                Fluent:Notify({ Title = "Saved", Content = "Settings saved as " .. name, Duration = 3 })
-                local loadDropdown = UIComponents.LoadConfigDropdown
-                if loadDropdown then
-                    local newList = refreshConfigList()
-                    loadDropdown:SetValues(newList)
-                end
-            else
-                Fluent:Notify({ Title = "Error", Content = "Failed to save: " .. err, Duration = 3 })
-            end
+            writefile("sentinel/configs/" .. name .. ".json", data)
+        end)
+        if success then
+            pcall(function() if WindUI then WindUI:Notify({ Title = "Saved", Content = "Settings saved as " .. name, Duration = 3 }) end end)
+        else
+            pcall(function() if WindUI then WindUI:Notify({ Title = "Error", Content = "Failed to save: " .. err, Duration = 3 }) end end)
         end
-    })
+    end })
 
-    local LoadSection = Tabs.Settings:AddSection("Load Settings")
+    local LoadSection = tab:Section({Title = "Load Settings", Opened = false})
     local configList = {}
     local function refreshConfigList()
         configList = {}
@@ -3105,43 +3439,31 @@ local function CreateSettingsTab()
         end
         return configList
     end
-
-    local loadDropdown = LoadSection:AddDropdown("LoadConfigDropdown", {
-        Title = "Select Config",
-        Values = refreshConfigList(),
-        Default = nil,
-        Callback = function(selected)
-            if selected then
-                local success, err = pcall(function()
-                    local data = readfile("sentinel/configs/" .. selected .. ".json")
-                    local loaded = HttpService:JSONDecode(data)
-                    for k, v in pairs(loaded) do
-                        Config[k] = v
-                    end
-                    applyConfigToUI()
-                    if loaded.Theme then
-                        Fluent:SetTheme(loaded.Theme)
-                    end
-                    Fluent:Notify({ Title = "Loaded", Content = "Config loaded: " .. selected, Duration = 3 })
-                end)
-                if not success then
-                    Fluent:Notify({ Title = "Error", Content = "Failed to load: " .. err, Duration = 3 })
+    local loadDropdown = LoadSection:Dropdown({ Title = "Select Config", Values = refreshConfigList(), Default = nil, Callback = function(selected)
+        if selected then
+            local success, err = pcall(function()
+                local data = readfile("sentinel/configs/" .. selected .. ".json")
+                local loaded = HttpService:JSONDecode(data)
+                for k, v in pairs(loaded) do
+                    Config[k] = v
                 end
+                if loaded.Theme then
+                    pcall(function() WindUI:SetTheme(loaded.Theme) end)
+                end
+                pcall(function() if WindUI then WindUI:Notify({ Title = "Loaded", Content = "Config loaded: " .. selected, Duration = 3 }) end end)
+            end)
+            if not success then
+                pcall(function() if WindUI then WindUI:Notify({ Title = "Error", Content = "Failed to load: " .. err, Duration = 3 }) end end)
             end
         end
-    })
-    storeComponent("LoadConfigDropdown", loadDropdown)
+    end })
+    LoadSection:Button({ Title = "Refresh List", Callback = function()
+        local newList = refreshConfigList()
+        loadDropdown:SetOptions(newList)
+        pcall(function() if WindUI then WindUI:Notify({ Title = "Refreshed", Content = "Config list updated", Duration = 2 }) end end)
+    end })
 
-    LoadSection:AddButton({
-        Title = "Refresh List",
-        Callback = function()
-            local newList = refreshConfigList()
-            loadDropdown:SetValues(newList)
-            Fluent:Notify({ Title = "Refreshed", Content = "Config list updated", Duration = 2 })
-        end
-    })
-
-    local DeleteSection = Tabs.Settings:AddSection("Delete Config")
+    local DeleteSection = tab:Section({Title = "Delete Config", Opened = false})
     local deleteConfigList = {}
     local function refreshDeleteConfigList()
         deleteConfigList = {}
@@ -3156,80 +3478,41 @@ local function CreateSettingsTab()
         end
         return deleteConfigList
     end
-
-    local deleteDropdown = DeleteSection:AddDropdown("DeleteConfigDropdown", {
-        Title = "Select Config to Delete",
-        Values = refreshDeleteConfigList(),
-        Default = nil,
-        Callback = function(selected)
+    local deleteDropdown = DeleteSection:Dropdown({ Title = "Select Config to Delete", Values = refreshDeleteConfigList(), Default = nil, Callback = function(selected) end })
+    DeleteSection:Button({ Title = "Delete Selected Config", Callback = function()
+        local selected = deleteDropdown.Value
+        if selected == nil or selected == "" then
+            pcall(function() if WindUI then WindUI:Notify({ Title = "Error", Content = "No config selected", Duration = 3 }) end end)
+            return
         end
-    })
-
-    DeleteSection:AddButton({
-        Title = "Delete Selected Config",
-        Callback = function()
-            local selected = deleteDropdown.Value
-            if selected == nil or selected == "" then
-                Fluent:Notify({ Title = "Error", Content = "No config selected", Duration = 3 })
-                return
-            end
-            local filePath = "sentinel/configs/" .. selected .. ".json"
-            if isfile(filePath) then
-                delfile(filePath)
-                Fluent:Notify({ Title = "Deleted", Content = "Config deleted: " .. selected, Duration = 3 })
-                local newList = refreshConfigList()
-                loadDropdown:SetValues(newList)
-                loadDropdown:SetValue(nil)
-                local newDeleteList = refreshDeleteConfigList()
-                deleteDropdown:SetValues(newDeleteList)
-                deleteDropdown:SetValue(nil)
-            else
-                Fluent:Notify({ Title = "Error", Content = "Config file not found", Duration = 3 })
-            end
+        local filePath = "sentinel/configs/" .. selected .. ".json"
+        if isfile(filePath) then
+            delfile(filePath)
+            pcall(function() if WindUI then WindUI:Notify({ Title = "Deleted", Content = "Config deleted: " .. selected, Duration = 3 }) end end)
+            local newList = refreshConfigList()
+            loadDropdown:SetOptions(newList)
+            loadDropdown:Set(nil)
+            local newDeleteList = refreshDeleteConfigList()
+            deleteDropdown:SetOptions(newDeleteList)
+            deleteDropdown:Set(nil)
+        else
+            pcall(function() if WindUI then WindUI:Notify({ Title = "Error", Content = "Config file not found", Duration = 3 }) end end)
         end
-    })
-
-    DeleteSection:AddButton({
-        Title = "Refresh Delete List",
-        Callback = function()
-            local newList = refreshDeleteConfigList()
-            deleteDropdown:SetValues(newList)
-            Fluent:Notify({ Title = "Refreshed", Content = "Delete list updated", Duration = 2 })
-        end
-    })
+    end })
+    DeleteSection:Button({ Title = "Refresh Delete List", Callback = function()
+        local newList = refreshDeleteConfigList()
+        deleteDropdown:SetOptions(newList)
+        pcall(function() if WindUI then WindUI:Notify({ Title = "Refreshed", Content = "Delete list updated", Duration = 2 }) end end)
+    end })
 end
 
-local function CreateDevTab()
-    local devSection = Tabs.Dev:AddSection("4 dev")
-    devSection:AddButton({
-        Title = "Infinite Yield",
-        Callback = function()
-            loadstring(game:HttpGet("https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source"))()
-        end
-    })
-    devSection:AddButton({
-        Title = "Dex Explorer V2",
-        Callback = function()
-            loadstring(game:HttpGet("https://github.com/AZYsGithub/DexPlusPlus/releases/latest/download/out.lua"))()
-        end
-    })
-    devSection:AddButton({
-        Title = "Invisible",
-        Callback = function()
-            loadstring(game:HttpGet('https://pastebin.com/raw/3Rnd9rHf'))()
-        end
-    })
+do
+    local tab = Tabs.Dev
+    local devSection = tab:Section({Title = "4 dev", Opened = true})
+    devSection:Button({ Title = "Infinite Yield", Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source"))() end })
+    devSection:Button({ Title = "Dex Explorer V2", Callback = function() loadstring(game:HttpGet("https://github.com/AZYsGithub/DexPlusPlus/releases/latest/download/out.lua"))() end })
+    devSection:Button({ Title = "Invisible", Callback = function() loadstring(game:HttpGet('https://pastebin.com/raw/3Rnd9rHf'))() end })
 end
-
-CreatePlayerTab()
-CreateCombatTab()
-CreateWorldTab()
-CreateFunTab()
-CreateESPTab()
-CreateGameTab()
-CreateSettingsTab()
-CreateDevTab()
-CreateAboutTab()
 
 RunService.Heartbeat:Connect(function(dt)
     applyAnimatorState()
@@ -3268,7 +3551,7 @@ task.spawn(function()
                             GodmodePreviousPosition = hrp.CFrame
                             char:PivotTo(CFrame.new(0, 5, 0))
                             GodmodeTeleported = true
-                            Fluent:Notify({ Title = "Godmode", Content = "Teleported to baseplate (health low)", Duration = 2 })
+                            pcall(function() if WindUI then WindUI:Notify({ Title = "Godmode", Content = "Teleported to baseplate (health low)", Duration = 2 }) end end)
                         end
                     end
                 end
@@ -3510,6 +3793,40 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
-Window:SelectTab(1)
-Fluent:Notify({ Title = "News", Content = "v8 Released :D", Duration = 5 })
-Fluent:Notify({ Title = "Sentinel v8.00.40", Content = "Script Loaded. Enjoy :D", Duration = 5 })
+local firstHide = true
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.K and Window then
+        if not Window.Visible and firstHide then
+            firstHide = false
+            pcall(function()
+                if WindUI then
+                    WindUI:Notify({
+                        Title = "Keybind",
+                        Content = "Press K to toggle interface",
+                        Duration = 3
+                    })
+                end
+            end)
+        end
+    end
+end)
+
+if Window and WindUI then
+    pcall(function()
+        Window:SelectTab(1)
+    end)
+    pcall(function()
+        WindUI:Notify({ Title = "News", Content = "v8 soon...", Duration = 5 })
+    end)
+    pcall(function()
+        WindUI:Notify({ Title = "Sentinel v7.00.10", Content = "Script Loaded. Enjoy :D", Duration = 5 })
+    end)
+else
+    game:GetService("StarterGui"):SetCore("SendNotification", {
+        Title = "Error",
+        Text = "Window or WindUI is nil. Check console for details.",
+        Duration = 10
+    })
+end
