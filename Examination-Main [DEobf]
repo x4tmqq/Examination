@@ -2536,7 +2536,7 @@ WindUI.Services.SentinelKeyService = {
 
 local Window = WindUI:CreateWindow({
     Title = "Sentinel - Examination",
-    Author = "Sentinel",
+    Author = "x4tmq",
     Folder = "Sentinel",
     ScrollBarEnabled = true,
     Size = UDim2.fromOffset(750, 650),
@@ -2559,7 +2559,7 @@ end
 
 safeCall(function()
     Window:Tag({
-        Title = "v8.00.40",
+        Title = "v9.00.10",
         Icon = "shield-check",
         Color = Color3.fromHex("#30ff6a"),
         Radius = 13
@@ -2914,7 +2914,7 @@ local function BuildUI(WindUI, Config, Window)
                 end
             end
         end })
-        local ChassSection = tab:Section({Title = "Chass Settings [BETA]", Opened = true})
+        local ChassSection = tab:Section({Title = "Chass Settings", Opened = true})
         ChassSection:Toggle({ Title = "Enable Chass", Default = false, Callback = function(v)
             Config.ChassEnabled = v
             if not v then
