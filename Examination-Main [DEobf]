@@ -2841,7 +2841,7 @@ end
 
 safeCall(function()
     Window:Tag({
-        Title = "v9.00.10",
+        Title = "v10.00.00",
         Icon = "shield-check",
         Color = Color3.fromHex("#30ff6a"),
         Radius = 13
