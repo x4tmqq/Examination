@@ -139,6 +139,8 @@ Config = {
     AntiAnchorEnabled = false,
     ShotPlantEnabled = false,
     AutoQTEEnabled = false,
+    NightStalkerInfAmmo = false,
+    AutoReload = false,
 }
 
 ValidCombatTools = {
@@ -1056,6 +1058,68 @@ function changeTeam(teamName)
     end
 end
 
+function applyChatState()
+    local enabled = Config.ChatLoggerEnabled
+    if TextChatService and TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
+        local chatWindow = TextChatService:FindFirstChild("ChatWindowConfiguration")
+        if chatWindow then
+            chatWindow.Enabled = enabled
+        end
+        local ui = CoreGui:FindFirstChild("TextChat")
+        if ui then
+            ui.Enabled = enabled
+        end
+        pcall(function()
+            local parent = TextChatService:FindFirstChild("ChatWindowParent")
+            if parent then
+                local window = parent:FindFirstChild("ChatWindow")
+                if window then
+                    window.Visible = enabled
+                end
+            end
+        end)
+    else
+        local chatGui = LocalPlayer.PlayerGui:FindFirstChild("Chat")
+        if chatGui then
+            chatGui.Enabled = enabled
+        end
+        local legacy = CoreGui:FindFirstChild("Chat")
+        if legacy then
+            legacy.Enabled = enabled
+        end
+    end
+end
+
+local function watchChatInterfaces()
+    CoreGui.ChildAdded:Connect(function(child)
+        if Config.ChatLoggerEnabled then
+            if child.Name == "TextChat" or child.Name == "Chat" then
+                task.wait(0.2)
+                applyChatState()
+            end
+        end
+    end)
+    if TextChatService then
+        TextChatService.ChildAdded:Connect(function(child)
+            if Config.ChatLoggerEnabled then
+                if child.Name == "ChatWindowConfiguration" then
+                    task.wait(0.2)
+                    applyChatState()
+                end
+            end
+        end)
+    end
+    LocalPlayer.PlayerGui.ChildAdded:Connect(function(child)
+        if Config.ChatLoggerEnabled then
+            if child.Name == "Chat" then
+                task.wait(0.2)
+                applyChatState()
+            end
+        end
+    end)
+end
+task.spawn(watchChatInterfaces)
+
 LocalPlayer.CharacterAdded:Connect(function(char)
     task.spawn(function()
         applyNametags(char)
@@ -1072,6 +1136,27 @@ LocalPlayer.CharacterAdded:Connect(function(char)
     if Config.StaggerImmune then
         char:SetAttribute("StaggerImmune", true)
     end
+
+    if Config.FlyEnabled then
+        task.wait(0.5)
+        CurrentFlyType = Config.FlyType
+        FlySpeed = Config.FlySpeed
+        enableFly(true)
+    end
+
+    if Config.ChatLoggerEnabled then
+        task.wait(1)
+        applyChatState()
+        task.delay(2, function()
+            if Config.ChatLoggerEnabled then
+                applyChatState()
+            end
+        end)
+    end
+
+    if Config.NightStalkerInfAmmo then
+        task.wait(0.5)
+    end
 end)
 
 if LocalPlayer.Character then
@@ -1080,7 +1165,7 @@ if LocalPlayer.Character then
     if clientScripts then
         local stagger = clientScripts:FindFirstChild("Stagger")
         if stagger then
-            stagger.Disabled = not Config.StaggerEnabled
+            stagger.Disabled = Config.StaggerEnabled
         end
     end
     if Config.StaggerImmune then
@@ -1893,6 +1978,27 @@ LocalPlayer.CharacterAdded:Connect(function(char)
     if Config.StaggerImmune then
         char:SetAttribute("StaggerImmune", true)
     end
+
+    if Config.FlyEnabled then
+        task.wait(0.5)
+        CurrentFlyType = Config.FlyType
+        FlySpeed = Config.FlySpeed
+        enableFly(true)
+    end
+
+    if Config.ChatLoggerEnabled then
+        task.wait(1)
+        applyChatState()
+        task.delay(2, function()
+            if Config.ChatLoggerEnabled then
+                applyChatState()
+            end
+        end)
+    end
+
+    if Config.NightStalkerInfAmmo then
+        task.wait(0.5)
+    end
 end)
 
 ClientEvents = ReplicatedStorage:FindFirstChild("Events")
@@ -2519,256 +2625,123 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 end
 
-function applyInfiniteAmmo()
-    if not Config.InfiniteAmmoEnabled then return end
-    local backpack = LocalPlayer:FindFirstChild("Backpack")
-    if backpack then
-        for _, item in ipairs(backpack:GetChildren()) do
-            if item:IsA("Tool") and item:GetAttribute("IsGun") == true then
-                local maxAmmo = item:FindFirstChild("MaxAmmo")
-                if maxAmmo then
-                    pcall(function()
-                        maxAmmo.Value = "9999999999999999999"
-                    end)
-                end
-                for _, desc in ipairs(item:GetDescendants()) do
-                    if desc.Name == "MaxAmmo" and desc:IsA("StringValue") then
+local NightStalkerInfAmmoRunning = false
+local NightStalkerInfAmmoLoopThread = nil
+
+local function nightStalkerInfAmmoLoop()
+    while NightStalkerInfAmmoRunning do
+        local bp = LocalPlayer:FindFirstChild("Backpack")
+        if bp then
+            for _, t in pairs(bp:GetChildren()) do
+                if t:IsA("Tool") and t:GetAttribute("ClipCurrent") then
+                    if t:GetAttribute("ClipCurrent") < 999999999999999999999999 then
                         pcall(function()
-                            desc.Value = "9999999999999999999"
+                            t:SetAttribute("ClipSize", 999999999999999999999999)
+                            t:SetAttribute("ClipCurrent", 999999999999999999999999)
+                            t:SetAttribute("MaxAmmo", 999999999999999999999999)
                         end)
                     end
                 end
             end
         end
+        task.wait(0.1)
     end
+end
+
+function toggleNightStalkerInfAmmo(state)
+    Config.NightStalkerInfAmmo = state
+    if state then
+        if not NightStalkerInfAmmoRunning then
+            NightStalkerInfAmmoRunning = true
+            if NightStalkerInfAmmoLoopThread then
+                task.cancel(NightStalkerInfAmmoLoopThread)
+            end
+            NightStalkerInfAmmoLoopThread = task.spawn(nightStalkerInfAmmoLoop)
+        end
+    else
+        NightStalkerInfAmmoRunning = false
+        if NightStalkerInfAmmoLoopThread then
+            task.cancel(NightStalkerInfAmmoLoopThread)
+            NightStalkerInfAmmoLoopThread = nil
+        end
+    end
+end
+
+local AutoReloadConnection = nil
+local AutoReloadTool = nil
+local AutoReloadLock = false
+
+local function handleAutoReload(tool)
+    if not Config.AutoReload then return end
+    if not tool or not tool:IsA("Tool") then return end
+    local clip = tool:GetAttribute("ClipCurrent")
+    if clip == nil then return end
+    if type(clip) == "number" and clip <= 0 then
+        if AutoReloadLock then return end
+        AutoReloadLock = true
+        task.wait(0.01)
+        if not Config.AutoReload then AutoReloadLock = false; return end
+        if not tool:IsDescendantOf(LocalPlayer.Character) and not tool:IsDescendantOf(LocalPlayer.Backpack) then
+            AutoReloadLock = false
+            return
+        end
+        VIM:SendKeyEvent(true, Enum.KeyCode.R, false, game)
+        task.wait(0.3)
+        VIM:SendKeyEvent(false, Enum.KeyCode.R, false, game)
+        task.wait(0.1)
+        AutoReloadLock = false
+    end
+end
+
+function setupAutoReload()
+    if AutoReloadConnection then AutoReloadConnection:Disconnect(); AutoReloadConnection = nil end
+    if not Config.AutoReload then return end
+
+    local function checkCurrentTool()
+        local char = LocalPlayer.Character
+        if not char then return end
+        local tool = char:FindFirstChildOfClass("Tool")
+        if tool and tool:GetAttribute("ClipCurrent") ~= nil then
+            if AutoReloadTool ~= tool then
+                AutoReloadTool = tool
+                if AutoReloadConnection then AutoReloadConnection:Disconnect() end
+                AutoReloadConnection = tool:GetAttributeChangedSignal("ClipCurrent"):Connect(function()
+                    handleAutoReload(tool)
+                end)
+            end
+        else
+            AutoReloadTool = nil
+            if AutoReloadConnection then AutoReloadConnection:Disconnect(); AutoReloadConnection = nil end
+        end
+    end
+
+    checkCurrentTool()
     local char = LocalPlayer.Character
     if char then
-        for _, item in ipairs(char:GetChildren()) do
-            if item:IsA("Tool") and item:GetAttribute("IsGun") == true then
-                local maxAmmo = item:FindFirstChild("MaxAmmo")
-                if maxAmmo then
-                    pcall(function()
-                        maxAmmo.Value = "9999999999999999999"
-                    end)
-                end
-                for _, desc in ipairs(item:GetDescendants()) do
-                    if desc.Name == "MaxAmmo" and desc:IsA("StringValue") then
-                        pcall(function()
-                            desc.Value = "9999999999999999999"
-                        end)
-                    end
-                end
+        if not char.ChildAdded:Connect(function(child)
+            if child:IsA("Tool") then
+                task.wait(0.1)
+                checkCurrentTool()
             end
-        end
-    end
-end
-
-InfiniteAmmoConnection = nil
-function setupInfiniteAmmo()
-    if InfiniteAmmoConnection then InfiniteAmmoConnection:Disconnect() end
-    if Config.InfiniteAmmoEnabled then
-        applyInfiniteAmmo()
-        local backpack = LocalPlayer:FindFirstChild("Backpack")
-        if backpack then
-            InfiniteAmmoConnection = backpack.ChildAdded:Connect(function(child)
-                if Config.InfiniteAmmoEnabled and child:IsA("Tool") then
-                    task.wait(0.2)
-                    applyInfiniteAmmo()
-                end
-            end)
-        end
-        local char = LocalPlayer.Character
-        if char then
-            char.ChildAdded:Connect(function(child)
-                if Config.InfiniteAmmoEnabled and child:IsA("Tool") then
-                    task.wait(0.2)
-                    applyInfiniteAmmo()
-                end
-            end)
-        end
-    end
-end
-
-function createShotPlantBullet(position, direction)
-    local bullet = Instance.new("Part")
-    bullet.Name = "ShotPlantBullet"
-    bullet.Anchored = false
-    bullet.CanCollide = true
-    bullet.Size = Vector3.new(0.5, 0.5, 0.5)
-    bullet.Shape = Enum.PartType.Block
-    bullet.Material = Enum.Material.Plastic
-    bullet.BrickColor = BrickColor.new("Bright red")
-    bullet.CFrame = CFrame.new(position, position + direction)
-    local mesh = Instance.new("SpecialMesh")
-    mesh.MeshId = "rbxassetid://2702173630"
-    mesh.TextureId = "rbxassetid://2702173739"
-    mesh.Scale = Vector3.new(3, 3, 3)
-    mesh.Parent = bullet
-    bullet.Parent = workspace
-    local bv = Instance.new("BodyVelocity")
-    bv.MaxForce = Vector3.new(1e6, 1e6, 1e6)
-    bv.Velocity = direction * 200
-    bv.Parent = bullet
-    bullet.Touched:Connect(function(hit)
-        if hit and hit.CanCollide then
-            bullet:Destroy()
-        end
-    end)
-    task.delay(5, function()
-        if bullet and bullet.Parent then bullet:Destroy() end
-    end)
-end
-
-function setupShotPlantForTool(tool)
-    if not tool or not tool:IsA("Tool") then return end
-    if not tool:GetAttribute("IsGun") then return end
-    pcall(function()
-        if WindUI then
-            WindUI:Notify({ Title = "Shot Plant", Content = tool.Name .. " is compatible with the bullet modifier.", Duration = 3 })
-        end
-    end)
-    local clip = tool:GetAttribute("ClipCurrent")
-    if clip then
-        shotPlantClipValue = tonumber(clip) or 0
-    else
-        shotPlantClipValue = 0
-    end
-    if shotPlantAttributeConnection then shotPlantAttributeConnection:Disconnect() end
-    shotPlantAttributeConnection = tool:GetAttributeChangedSignal("ClipCurrent"):Connect(function()
-        if not Config.ShotPlantEnabled then return end
-        local newClip = tool:GetAttribute("ClipCurrent")
-        local newNum = tonumber(newClip) or 0
-        if newNum < shotPlantClipValue then
-            local char = LocalPlayer.Character
-            if char then
-                local hrp = char:FindFirstChild("HumanoidRootPart")
-                if hrp then
-                    local pos = hrp.Position + Vector3.new(0, 1.5, 0) + Camera.CFrame.LookVector * 2
-                    local dir = Camera.CFrame.LookVector
-                    createShotPlantBullet(pos, dir)
-                end
+        end) then end
+        if not char.ChildRemoved:Connect(function(child)
+            if child:IsA("Tool") then
+                task.wait(0.1)
+                checkCurrentTool()
             end
-        end
-        shotPlantClipValue = newNum
-    end)
+        end) then end
+    end
 end
 
-function enableShotPlant(state)
+function toggleAutoReload(state)
+    Config.AutoReload = state
     if state then
-        Config.ShotPlantEnabled = true
-        local char = LocalPlayer.Character
-        if char then
-            local tool = char:FindFirstChildOfClass("Tool")
-            if tool then
-                setupShotPlantForTool(tool)
-            end
-            if shotPlantToolAddedConnection then shotPlantToolAddedConnection:Disconnect() end
-            shotPlantToolAddedConnection = char.ChildAdded:Connect(function(child)
-                if child:IsA("Tool") and Config.ShotPlantEnabled then
-                    setupShotPlantForTool(child)
-                end
-            end)
-            if shotPlantToolRemovedConnection then shotPlantToolRemovedConnection:Disconnect() end
-            shotPlantToolRemovedConnection = char.ChildRemoved:Connect(function(child)
-                if child:IsA("Tool") then
-                    if shotPlantAttributeConnection then
-                        shotPlantAttributeConnection:Disconnect()
-                        shotPlantAttributeConnection = nil
-                    end
-                    shotPlantClipValue = nil
-                end
-            end)
-        end
-        if shotPlantCharacterAddedConnection then shotPlantCharacterAddedConnection:Disconnect() end
-        shotPlantCharacterAddedConnection = LocalPlayer.CharacterAdded:Connect(function()
-            if Config.ShotPlantEnabled then
-                if shotPlantAttributeConnection then shotPlantAttributeConnection:Disconnect(); shotPlantAttributeConnection = nil end
-                shotPlantClipValue = nil
-                local char = LocalPlayer.Character
-                if char then
-                    local tool = char:FindFirstChildOfClass("Tool")
-                    if tool then
-                        setupShotPlantForTool(tool)
-                    end
-                end
-            end
-        end)
+        setupAutoReload()
     else
-        Config.ShotPlantEnabled = false
-        if shotPlantAttributeConnection then shotPlantAttributeConnection:Disconnect(); shotPlantAttributeConnection = nil end
-        if shotPlantToolAddedConnection then shotPlantToolAddedConnection:Disconnect(); shotPlantToolAddedConnection = nil end
-        if shotPlantToolRemovedConnection then shotPlantToolRemovedConnection:Disconnect(); shotPlantToolRemovedConnection = nil end
-        if shotPlantCharacterAddedConnection then shotPlantCharacterAddedConnection:Disconnect(); shotPlantCharacterAddedConnection = nil end
-        shotPlantClipValue = nil
+        if AutoReloadConnection then AutoReloadConnection:Disconnect(); AutoReloadConnection = nil end
+        AutoReloadTool = nil
+        AutoReloadLock = false
     end
-end
-
-function completeManhattanQuests()
-    local hasBadge = false
-    local success, result = pcall(function()
-        return BadgeService:UserHasBadgeAsync(LocalPlayer.UserId, 282806616820547)
-    end)
-    if success and result then
-        hasBadge = true
-    end
-    if hasBadge then
-        pcall(function()
-            if WindUI then
-                WindUI:Notify({
-                    Title = "Quest Already Done",
-                    Content = "You already finished this quest !",
-                    Duration = 4
-                })
-            end
-        end)
-        return
-    end
-    local questFolder = workspace:FindFirstChild("ManhattanRadiationQuest")
-    if not questFolder then
-        pcall(function()
-            if WindUI then
-                WindUI:Notify({
-                    Title = "Quest Error",
-                    Content = "Go talk to Manhattan First !",
-                    Duration = 4
-                })
-            end
-        end)
-        return
-    end
-    local activeItems = questFolder:FindFirstChild("ActiveItems")
-    if not activeItems or #activeItems:GetChildren() == 0 then
-        pcall(function()
-            if WindUI then
-                WindUI:Notify({
-                    Title = "Quest Error",
-                    Content = "Go talk to Manhattan First !",
-                    Duration = 4
-                })
-            end
-        end)
-        return
-    end
-    pcall(function()
-        local vim = game:GetService("VirtualInputManager")
-        local camera = workspace.CurrentCamera
-        local hrp = (game.Players.LocalPlayer.Character or game.Players.LocalPlayer.CharacterAdded:Wait()):WaitForChild("HumanoidRootPart")
-        local startCFrame = hrp.CFrame
-        local items = activeItems:GetChildren()
-        if #items > 0 then
-            local targetPos = items[1]:GetPivot().Position
-            hrp.CFrame = CFrame.new(targetPos + Vector3.new(0, 2, 0))
-            task.wait(0.3)
-            camera.CFrame = CFrame.new(camera.CFrame.Position, targetPos)
-            hrp.CFrame = CFrame.new(hrp.Position, Vector3.new(targetPos.X, hrp.Position.Y, targetPos.Z))
-            task.wait(0.2)
-            vim:SendKeyEvent(true, Enum.KeyCode.E, false, game)
-            task.wait(3)
-            vim:SendKeyEvent(false, Enum.KeyCode.E, false, game)
-            task.wait(1)
-            hrp.CFrame = startCFrame
-        end
-    end)
 end
 
 WindUI = nil
@@ -2871,7 +2844,7 @@ end
 
 safeCall(function()
     Window:Tag({
-        Title = "v11.00.00 [BETA]",
+        Title = "v11.00.00",
         Icon = "shield-check",
         Color = Color3.fromHex("#30ff6a"),
         Radius = 13
@@ -2895,6 +2868,167 @@ function BuildUI()
         Utilities = Window:Tab({ Title = "Utilities", Icon = "wrench" }),
         About = Window:Tab({ Title = "About", Icon = "info" }),
     }
+
+    do
+        local tab = Tabs.Quests
+        local helperSection = tab:Section({Title = "Quests Helper", Opened = true, Icon = "scroll"})
+        helperSection:Button({ Title = "Complete Manhattan Quest", Callback = completeManhattanQuests })
+        helperSection:Toggle({ Title = "Elsher Quest Helper", Default = false, Callback = function(v)
+            ElsherHelperActive = v
+            if v then
+                startElsherLoop()
+            else
+                stopElsherLoop()
+            end
+        end })
+
+        do
+            local s = tab:Section({Title = "Auto Quest", Opened = true, Icon = "package-open"})
+            s:Button({ Title = "Get Underequipped Badge", Callback = function()
+                local char = LocalPlayer.Character
+                if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+                local hrp = char.HumanoidRootPart
+                local ZoneParts = Workspace:FindFirstChild("ZoneParts")
+                if not ZoneParts then
+                    pcall(function() if WindUI then WindUI:Notify({ Title = "Error", Content = "ZoneParts not found", Duration = 3 }) end end)
+                    return
+                end
+                local inSector = false
+                for _, v in ipairs(ZoneParts:GetChildren()) do
+                    if v:IsA("BasePart") then
+                        local p = v.CFrame:PointToObjectSpace(hrp.Position)
+                        local s2 = v.Size * 0.5
+                        if math.abs(p.X) <= s2.X and math.abs(p.Y) <= s2.Y and math.abs(p.Z) <= s2.Z then inSector = true; break end
+                    end
+                end
+                if not inSector then
+                    pcall(function() if WindUI then WindUI:Notify({ Title = "Error", Content = "You are not in a sector.", Duration = 3 }) end end)
+                    return
+                end
+                local backpack = LocalPlayer:FindFirstChild("Backpack")
+                if backpack and #backpack:GetChildren() > 5 then
+                    pcall(function() if WindUI then WindUI:Notify({ Title = "Error", Content = "You are not classless.", Duration = 3 }) end end)
+                    return
+                end
+                local o = workspace:FindFirstChild("Classless_Badge")
+                if o then char:PivotTo(o:GetPivot() * CFrame.new(0, 2, 0))
+                else pcall(function() if WindUI then WindUI:Notify({ Title = "Error", Content = "You are not in a sector.", Duration = 3 }) end end) end
+            end })
+
+            local collectBtn = s:Button({ Title = "Collect All Documents", Callback = function()
+                local documentsFolder = workspace:FindFirstChild("Documents")
+                if not documentsFolder then
+                    pcall(function() if WindUI then WindUI:Notify({ Title = "Error", Content = "Documents folder not found", Duration = 3 }) end end)
+                    return
+                end
+                local children = documentsFolder:GetChildren()
+                if #children == 0 then
+                    pcall(function() if WindUI then WindUI:Notify({ Title = "Info", Content = "No documents found", Duration = 3 }) end end)
+                    return
+                end
+                local char = LocalPlayer.Character
+                if not char then return end
+                local hrp = char:FindFirstChild("HumanoidRootPart")
+                if not hrp then return end
+                local startPos = hrp.CFrame
+                local vim = game:GetService("VirtualInputManager")
+                for _, doc in ipairs(children) do
+                    if doc:IsA("Model") and doc:FindFirstChild("HumanoidRootPart") then
+                        local pos = doc.HumanoidRootPart.Position
+                        hrp.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0))
+                        task.wait(0.3)
+                        vim:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+                        task.wait(0.5)
+                        vim:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+                        task.wait(0.2)
+                    end
+                end
+                hrp.CFrame = startPos
+                pcall(function() if WindUI then WindUI:Notify({ Title = "Done", Content = "Collected all documents", Duration = 3 }) end end)
+            end })
+            collectBtn:Lock()
+        end
+    end
+
+    do
+        local tab = Tabs.Combat
+
+        do
+            local s = tab:Section({Title = "Fists Settings", Opened = true, Icon = "hand-fist"})
+            s:Toggle({ Title = "Enable G-Key Attack", Default = true, Callback = function(v) Config.GAttackEnabled = v end })
+            s:Toggle({ Title = "Bypass Client Cooldowns", Default = false, Callback = function(v) Config.BypassCombatCooldowns = v end })
+            s:Toggle({ Title = "Auto-Spam Attack", Default = false, Callback = function(v) Config.AutoSpamAttack = v end })
+            local cf = s:Toggle({ Title = "Custom Finisher [ALPHA]", Default = false, Callback = function(v) Config.CustomFinisherEnabled = v end })
+            cf:Lock()
+        end
+
+        do
+            local s = tab:Section({Title = "Gun Mod", Opened = true, Icon = "crosshair"})
+            s:Toggle({ Title = "Hitbox Expander", Default = false, Callback = function(v) HitboxEnabled = v; UpdateAllHitboxes(HitboxEnabled) end })
+            s:Toggle({ Title = "Silencer", Default = false, Callback = function(v) Config.SilencerEnabled = v; updateSilencers(v) end })
+            s:Toggle({ Title = "Auto Reload", Default = false, Callback = function(v)
+                toggleAutoReload(v)
+            end })
+            local nr = s:Toggle({ Title = "No Recoil [PATCHED]", Default = false, Callback = function(v) Config.AntiCamShake = v end })
+            nr:Lock()
+            s:Toggle({ Title = "Infinite Ammo (For NightStalker Quest)", Default = false, Callback = function(v)
+                toggleNightStalkerInfAmmo(v)
+            end })
+            s:Toggle({ Title = "Shot Plant", Default = false, Callback = function(v)
+                enableShotPlant(v)
+            end })
+        end
+
+        do
+            local s = tab:Section({Title = "Shield Remover", Opened = true, Icon = "shield-x"})
+            s:Button({ Title = "Delete All Shields", Callback = function()
+                for _, obj in ipairs(workspace:GetDescendants()) do if obj.Name == "Shield" then obj:Destroy() end end
+            end })
+            s:Toggle({ Title = "Auto-Remove Shields", Default = false, Callback = function(v)
+                AutoShieldRemovalActive = v
+                if v then
+                    for _, obj in ipairs(workspace:GetDescendants()) do if obj.Name == "Shield" then obj:Destroy() end end
+                    if not AutoShieldRemovalConnection then
+                        AutoShieldRemovalConnection = workspace.DescendantAdded:Connect(function(desc)
+                            if AutoShieldRemovalActive then
+                                task.wait(0.1)
+                                if desc.Name == "Shield" then desc:Destroy() end
+                                for _, shield in ipairs(desc:GetDescendants()) do if shield.Name == "Shield" then shield:Destroy() end end
+                            end
+                        end)
+                    end
+                else
+                    if AutoShieldRemovalConnection then
+                        AutoShieldRemovalConnection:Disconnect()
+                        AutoShieldRemovalConnection = nil
+                    end
+                end
+            end })
+        end
+
+        do
+            local s = tab:Section({Title = "Axe Remover", Opened = true, Icon = "axe"})
+            s:Button({ Title = "Delete Slasher Axe", Callback = deleteSlasherAxe })
+            s:Toggle({ Title = "Auto-Remove Axe", Default = false, Callback = function(v)
+                AutoRemoveAxeActive = v
+                if v then deleteSlasherAxe(); setupAutoRemoveAxe()
+                else if AutoRemoveAxeConnection then AutoRemoveAxeConnection:Disconnect(); AutoRemoveAxeConnection = nil end end
+            end })
+        end
+
+        do
+            local s = tab:Section({Title = "Chass Settings", Opened = true, Icon = "heart-pulse"})
+            s:Toggle({ Title = "Enable Chass", Default = false, Callback = function(v)
+                Config.ChassEnabled = v
+                if not v then ChassExtern.clearAll() end
+            end })
+            s:Slider({ Title = "Detection Radius", Value = {Min = 10, Max = 200, Default = 60}, Rounding = 0, Enabled = true, Callback = function(v) Config.ChassDetectionRadius = v end })
+            s:Slider({ Title = "Heart Size", Value = {Min = 1, Max = 75, Default = 30}, Rounding = 0, Enabled = true, Callback = function(v)
+                Config.ChassHeartSize = v
+                ChassExtern.updateHeartSize()
+            end })
+        end
+    end
 
     do
         local tab = Tabs.Player
@@ -3210,81 +3344,6 @@ function BuildUI()
             s:Input({ Title = "Rank", Default = "", Placeholder = "Enter rank", Callback = function(value) Config.CharacterRank = value; applyNametags(LocalPlayer.Character) end })
             s:Colorpicker({ Title = "Nametag Color", Default = Config.TagColor, Callback = function(value) Config.TagColor = value; applyNametags(LocalPlayer.Character) end })
             s:Dropdown({ Title = "Team", Values = {"Menlo", "RIF", "RSU"}, Default = "Menlo", Callback = function(value) Config.Team = value; changeTeam(value) end })
-        end
-    end
-
-    do
-        local tab = Tabs.Combat
-
-        do
-            local s = tab:Section({Title = "Fists Settings", Opened = true, Icon = "hand-fist"})
-            s:Toggle({ Title = "Enable G-Key Attack", Default = true, Callback = function(v) Config.GAttackEnabled = v end })
-            s:Toggle({ Title = "Bypass Client Cooldowns", Default = false, Callback = function(v) Config.BypassCombatCooldowns = v end })
-            s:Toggle({ Title = "Auto-Spam Attack", Default = false, Callback = function(v) Config.AutoSpamAttack = v end })
-            local cf = s:Toggle({ Title = "Custom Finisher [ALPHA]", Default = false, Callback = function(v) Config.CustomFinisherEnabled = v end })
-            cf:Lock()
-        end
-
-        do
-            local s = tab:Section({Title = "Gun Mod", Opened = true, Icon = "crosshair"})
-            local nr = s:Toggle({ Title = "No Recoil [ALPHA]", Default = false, Callback = function(v) Config.AntiCamShake = v end })
-            nr:Lock()
-            s:Toggle({ Title = "Infinite Ammo [ALPHA]", Default = false, Callback = function(v) Config.InfiniteAmmoEnabled = v; setupInfiniteAmmo(); if v then applyInfiniteAmmo() end end }):Lock()
-            s:Toggle({ Title = "Hitbox Expander", Default = false, Callback = function(v) HitboxEnabled = v; UpdateAllHitboxes(HitboxEnabled) end })
-            s:Toggle({ Title = "Silencer", Default = false, Callback = function(v) Config.SilencerEnabled = v; updateSilencers(v) end })
-            s:Toggle({ Title = "Shot Plant", Default = false, Callback = function(v)
-                enableShotPlant(v)
-            end })
-        end
-
-        do
-            local s = tab:Section({Title = "Shield Remover", Opened = true, Icon = "shield-x"})
-            s:Button({ Title = "Delete All Shields", Callback = function()
-                for _, obj in ipairs(workspace:GetDescendants()) do if obj.Name == "Shield" then obj:Destroy() end end
-            end })
-            s:Toggle({ Title = "Auto-Remove Shields", Default = false, Callback = function(v)
-                AutoShieldRemovalActive = v
-                if v then
-                    for _, obj in ipairs(workspace:GetDescendants()) do if obj.Name == "Shield" then obj:Destroy() end end
-                    if not AutoShieldRemovalConnection then
-                        AutoShieldRemovalConnection = workspace.DescendantAdded:Connect(function(desc)
-                            if AutoShieldRemovalActive then
-                                task.wait(0.1)
-                                if desc.Name == "Shield" then desc:Destroy() end
-                                for _, shield in ipairs(desc:GetDescendants()) do if shield.Name == "Shield" then shield:Destroy() end end
-                            end
-                        end)
-                    end
-                else
-                    if AutoShieldRemovalConnection then
-                        AutoShieldRemovalConnection:Disconnect()
-                        AutoShieldRemovalConnection = nil
-                    end
-                end
-            end })
-        end
-
-        do
-            local s = tab:Section({Title = "Axe Remover", Opened = true, Icon = "axe"})
-            s:Button({ Title = "Delete Slasher Axe", Callback = deleteSlasherAxe })
-            s:Toggle({ Title = "Auto-Remove Axe", Default = false, Callback = function(v)
-                AutoRemoveAxeActive = v
-                if v then deleteSlasherAxe(); setupAutoRemoveAxe()
-                else if AutoRemoveAxeConnection then AutoRemoveAxeConnection:Disconnect(); AutoRemoveAxeConnection = nil end end
-            end })
-        end
-
-        do
-            local s = tab:Section({Title = "Chass Settings", Opened = true, Icon = "heart-pulse"})
-            s:Toggle({ Title = "Enable Chass", Default = false, Callback = function(v)
-                Config.ChassEnabled = v
-                if not v then ChassExtern.clearAll() end
-            end })
-            s:Slider({ Title = "Detection Radius", Value = {Min = 10, Max = 200, Default = 60}, Rounding = 0, Enabled = true, Callback = function(v) Config.ChassDetectionRadius = v end })
-            s:Slider({ Title = "Heart Size", Value = {Min = 1, Max = 75, Default = 30}, Rounding = 0, Enabled = true, Callback = function(v)
-                Config.ChassHeartSize = v
-                ChassExtern.updateHeartSize()
-            end })
         end
     end
 
@@ -3629,263 +3688,6 @@ function BuildUI()
     end
 
     do
-        local tab = Tabs.Quests
-
-        ElsherHelperActive = false
-        ElsherHighlights = {}
-        ElsherBillboards = {}
-        ElsherTask = nil
-
-        function getDisplayName(objName)
-            local name = objName:lower()
-            if name:find("mutant crawler") then return "Crawler Mutant"
-            elseif name:find("lurker") then return "Lurker"
-            elseif name:find("mutant") and not name:find("crawler") then return "Mutant"
-            elseif name:find("riser") then return "Riser"
-            elseif name:find("slasher") then return "Slasher"
-            elseif name:find("gilbert") then return "Gilbert"
-            elseif name:find("mikhail") then return "Mikhail"
-            elseif name:find("chimera") then return "Chimera"
-            else return objName
-            end
-        end
-
-        function updateElsherHelper()
-            local char = LocalPlayer.Character
-            if not char then return end
-            local hrp = char:FindFirstChild("HumanoidRootPart")
-            if not hrp then return end
-
-            local targetConfig = {
-                ["mutant crawler"] = 1,
-                ["lurker"] = 3,
-                ["mutant"] = 2,
-                ["mikhail"] = 1,
-                ["riser"] = 2,
-                ["slasher"] = 2,
-                ["gilbert"] = 1,
-                ["chimera"] = 1,
-            }
-
-            local found = {}
-            for _, obj in ipairs(workspace:GetDescendants()) do
-                if obj:IsA("Model") and obj:FindFirstChildOfClass("Humanoid") then
-                    local name = obj.Name:lower()
-                    local matchedKey = nil
-                    for key in pairs(targetConfig) do
-                        if name:find(key) then
-                            matchedKey = key
-                            break
-                        end
-                    end
-                    if matchedKey then
-                        if obj == LocalPlayer.Character then continue end
-                        if Players:GetPlayerFromCharacter(obj) then continue end
-                        local hum = obj:FindFirstChildOfClass("Humanoid")
-                        if hum and hum.Health > 0 then
-                            local root = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso")
-                            if root then
-                                local dist = (root.Position - hrp.Position).Magnitude
-                                table.insert(found, {
-                                    obj = obj,
-                                    key = matchedKey,
-                                    displayName = getDisplayName(obj.Name),
-                                    health = math.floor(hum.Health),
-                                    dist = dist
-                                })
-                            end
-                        end
-                    end
-                end
-            end
-
-            local toHighlight = {}
-            for key, limit in pairs(targetConfig) do
-                local filtered = {}
-                for _, entry in ipairs(found) do
-                    if entry.key == key then
-                        table.insert(filtered, entry)
-                    end
-                end
-                table.sort(filtered, function(a, b) return a.dist < b.dist end)
-                for i = 1, math.min(limit, #filtered) do
-                    table.insert(toHighlight, filtered[i])
-                end
-            end
-
-            local currentObjs = {}
-            for _, entry in ipairs(toHighlight) do
-                currentObjs[entry.obj] = {
-                    displayName = entry.displayName,
-                    health = entry.health
-                }
-            end
-
-            for obj, hl in pairs(ElsherHighlights) do
-                if not currentObjs[obj] then
-                    hl:Destroy()
-                    ElsherHighlights[obj] = nil
-                end
-            end
-
-            for obj, bill in pairs(ElsherBillboards) do
-                if not currentObjs[obj] then
-                    bill:Destroy()
-                    ElsherBillboards[obj] = nil
-                end
-            end
-
-            for obj, data in pairs(currentObjs) do
-                if not ElsherHighlights[obj] then
-                    local hl = Instance.new("Highlight")
-                    hl.FillColor = Color3.fromRGB(255, 50, 50)
-                    hl.OutlineColor = Color3.fromRGB(255, 255, 255)
-                    hl.FillTransparency = 0.7
-                    hl.OutlineTransparency = 1.0
-                    hl.Adornee = obj
-                    hl.Parent = obj
-                    ElsherHighlights[obj] = hl
-                end
-
-                if not ElsherBillboards[obj] then
-                    local root = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso")
-                    if root then
-                        local bill = Instance.new("BillboardGui")
-                        bill.Name = "ElsherTag"
-                        bill.Size = UDim2.new(0, 200, 0, 25)
-                        bill.StudsOffset = Vector3.new(0, 3.5, 0)
-                        bill.AlwaysOnTop = true
-                        bill.LightInfluence = 0
-                        bill.Parent = root
-                        local label = Instance.new("TextLabel")
-                        label.Size = UDim2.new(1, 0, 1, 0)
-                        label.BackgroundTransparency = 1
-                        label.TextColor3 = Color3.fromRGB(255, 0, 0)
-                        label.TextStrokeTransparency = 1
-                        label.Font = Enum.Font.GothamBold
-                        label.TextSize = 12
-                        label.Text = data.displayName .. " [" .. data.health .. " HP]"
-                        label.TextScaled = false
-                        label.Parent = bill
-                        ElsherBillboards[obj] = bill
-                    end
-                else
-                    local bill = ElsherBillboards[obj]
-                    local label = bill:FindFirstChildOfClass("TextLabel")
-                    if label then
-                        label.Text = data.displayName .. " [" .. data.health .. " HP]"
-                    end
-                end
-            end
-        end
-
-        function startElsherLoop()
-            if ElsherTask then return end
-            ElsherTask = task.spawn(function()
-                while ElsherHelperActive do
-                    pcall(updateElsherHelper)
-                    task.wait(0.3)
-                end
-            end)
-        end
-
-        function stopElsherLoop()
-            if ElsherTask then
-                task.cancel(ElsherTask)
-                ElsherTask = nil
-            end
-            for obj, hl in pairs(ElsherHighlights) do
-                hl:Destroy()
-            end
-            table.clear(ElsherHighlights)
-            for obj, bill in pairs(ElsherBillboards) do
-                bill:Destroy()
-            end
-            table.clear(ElsherBillboards)
-        end
-
-        do
-            local s = tab:Section({Title = "NPC Quests", Opened = true, Icon = "scroll"})
-            s:Button({ Title = "Complete Manhattan Quest", Callback = completeManhattanQuests })
-            s:Toggle({ Title = "Elsher Quest Helper", Default = false, Callback = function(v)
-                ElsherHelperActive = v
-                if v then
-                    startElsherLoop()
-                else
-                    stopElsherLoop()
-                end
-            end })
-        end
-
-        do
-            local s = tab:Section({Title = "Auto Collect", Opened = true, Icon = "package-open"})
-            s:Button({ Title = "Get Underequipped Badge", Callback = function()
-                local char = LocalPlayer.Character
-                if not char or not char:FindFirstChild("HumanoidRootPart") then return end
-                local hrp = char.HumanoidRootPart
-                local ZoneParts = Workspace:FindFirstChild("ZoneParts")
-                if not ZoneParts then
-                    pcall(function() if WindUI then WindUI:Notify({ Title = "Error", Content = "ZoneParts not found", Duration = 3 }) end end)
-                    return
-                end
-                local inSector = false
-                for _, v in ipairs(ZoneParts:GetChildren()) do
-                    if v:IsA("BasePart") then
-                        local p = v.CFrame:PointToObjectSpace(hrp.Position)
-                        local s2 = v.Size * 0.5
-                        if math.abs(p.X) <= s2.X and math.abs(p.Y) <= s2.Y and math.abs(p.Z) <= s2.Z then inSector = true; break end
-                    end
-                end
-                if not inSector then
-                    pcall(function() if WindUI then WindUI:Notify({ Title = "Error", Content = "You are not in a sector.", Duration = 3 }) end end)
-                    return
-                end
-                local backpack = LocalPlayer:FindFirstChild("Backpack")
-                if backpack and #backpack:GetChildren() > 5 then
-                    pcall(function() if WindUI then WindUI:Notify({ Title = "Error", Content = "You are not classless.", Duration = 3 }) end end)
-                    return
-                end
-                local o = workspace:FindFirstChild("Classless_Badge")
-                if o then char:PivotTo(o:GetPivot() * CFrame.new(0, 2, 0))
-                else pcall(function() if WindUI then WindUI:Notify({ Title = "Error", Content = "You are not in a sector.", Duration = 3 }) end end) end
-            end })
-
-            local collectBtn = s:Button({ Title = "Collect All Documents", Callback = function()
-                local documentsFolder = workspace:FindFirstChild("Documents")
-                if not documentsFolder then
-                    pcall(function() if WindUI then WindUI:Notify({ Title = "Error", Content = "Documents folder not found", Duration = 3 }) end end)
-                    return
-                end
-                local children = documentsFolder:GetChildren()
-                if #children == 0 then
-                    pcall(function() if WindUI then WindUI:Notify({ Title = "Info", Content = "No documents found", Duration = 3 }) end end)
-                    return
-                end
-                local char = LocalPlayer.Character
-                if not char then return end
-                local hrp = char:FindFirstChild("HumanoidRootPart")
-                if not hrp then return end
-                local startPos = hrp.CFrame
-                local vim = game:GetService("VirtualInputManager")
-                for _, doc in ipairs(children) do
-                    if doc:IsA("Model") and doc:FindFirstChild("HumanoidRootPart") then
-                        local pos = doc.HumanoidRootPart.Position
-                        hrp.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0))
-                        task.wait(0.3)
-                        vim:SendKeyEvent(true, Enum.KeyCode.E, false, game)
-                        task.wait(0.5)
-                        vim:SendKeyEvent(false, Enum.KeyCode.E, false, game)
-                        task.wait(0.2)
-                    end
-                end
-                hrp.CFrame = startPos
-                pcall(function() if WindUI then WindUI:Notify({ Title = "Done", Content = "Collected all documents", Duration = 3 }) end end)
-            end })
-            collectBtn:Lock()
-        end
-    end
-
-    do
         local tab = Tabs.Utilities
 
         do
@@ -3947,25 +3749,10 @@ function BuildUI()
             end })
             s:Toggle({ Title = "Show Native Chat (CoreGui)", Default = false, Callback = function(v)
                 Config.ChatLoggerEnabled = v
-                if TextChatService and TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
-                    local chatWindow = TextChatService:FindFirstChild("ChatWindowConfiguration")
-                    if chatWindow then chatWindow.Enabled = v end
-                    local ui = CoreGui:FindFirstChild("TextChat")
-                    if ui then ui.Enabled = v end
-                    pcall(function()
-                        local parent = TextChatService:FindFirstChild("ChatWindowParent")
-                        if parent then
-                            local window = parent:FindFirstChild("ChatWindow")
-                            if window then window.Visible = v end
-                        end
-                    end)
-                else
-                    local chatGui = LocalPlayer.PlayerGui:FindFirstChild("Chat")
-                    if chatGui then chatGui.Enabled = v end
-                    local legacy = CoreGui:FindFirstChild("Chat")
-                    if legacy then legacy.Enabled = v end
+                applyChatState()
+                if v then
+                    pcall(function() if WindUI then WindUI:Notify({ Title = "Chat", Content = "Native chat interface enabled", Duration = 2 }) end end)
                 end
-                if v then pcall(function() if WindUI then WindUI:Notify({ Title = "Chat", Content = "Native chat interface enabled", Duration = 2 }) end end) end
             end })
         end
 
