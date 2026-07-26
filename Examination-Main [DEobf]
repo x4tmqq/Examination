@@ -145,6 +145,14 @@ Config = {
     AutoReload = false,
 }
 
+-- ====== NOUVELLES VARIABLES POUR SHOT PLANT ======
+local shotPlantConnections = {}
+local shotPlantCurrentTool = nil
+local shotPlantLastClip = nil
+local shotPlantCheckConnection = nil
+local shotPlantToolAddedConnection = nil
+-- =================================================
+
 ValidCombatTools = {
     ["MPV-9"] = true, ["Mossberg 590A1"] = true, ["Beanbag Shotgun"] = true, ["VGS-9"] = true,
     ["Lock-17 [F]"] = true, ["MPV-SD"] = true, ["IA AR-56"] = true, ["AR-18 'Standard'"] = true,
@@ -261,13 +269,6 @@ infectionIsRunning = false
 
 AutoRemoveAxeActive = false
 AutoRemoveAxeConnection = nil
-
-shotPlantCurrentTool = nil
-shotPlantClipValue = nil
-shotPlantAttributeConnection = nil
-shotPlantToolAddedConnection = nil
-shotPlantToolRemovedConnection = nil
-shotPlantCharacterAddedConnection = nil
 
 local RS = game:GetService("ReplicatedStorage")
 local VIM = game:GetService("VirtualInputManager")
@@ -2771,14 +2772,123 @@ function toggleAutoReload(state)
     end
 end
 
+-- ===== NOUVELLE FONCTION SHOT PLANT (corrigée) =====
 function enableShotPlant(state)
     Config.ShotPlantEnabled = state
-    if state then
-        pcall(function()
-            if WindUI then WindUI:Notify({ Title = "Shot Plant", Content = "Shot Plant feature is not fully implemented.", Duration = 3 }) end
+
+    -- Nettoyage des anciennes connexions
+    if shotPlantCheckConnection then shotPlantCheckConnection:Disconnect(); shotPlantCheckConnection = nil end
+    if shotPlantToolAddedConnection then shotPlantToolAddedConnection:Disconnect(); shotPlantToolAddedConnection = nil end
+    for _, conn in pairs(shotPlantConnections) do conn:Disconnect() end
+    table.clear(shotPlantConnections)  -- si table.clear n'existe pas, remplace par : for k in pairs(shotPlantConnections) do shotPlantConnections[k] = nil end
+    shotPlantCurrentTool = nil
+    shotPlantLastClip = nil
+
+    if not state then
+        pcall(function() if WindUI then WindUI:Notify({ Title = "Shot Plant", Content = "Désactivé", Duration = 2 }) end end)
+        return
+    end
+
+    -- Fonction pour vérifier l'outil actuel
+    local function checkTool()
+        local char = LocalPlayer.Character
+        if not char then return end
+        local tool = char:FindFirstChildOfClass("Tool")
+        if tool and tool:GetAttribute("IsGun") == true then
+            shotPlantCurrentTool = tool
+            local clip = tool:GetAttribute("ClipCurrent")
+            if clip ~= nil then
+                shotPlantLastClip = clip
+            end
+            -- Ajouter une connexion sur ClipCurrent
+            if not shotPlantConnections[tool] then
+                shotPlantConnections[tool] = tool:GetAttributeChangedSignal("ClipCurrent"):Connect(function()
+                    local newClip = tool:GetAttribute("ClipCurrent")
+                    if newClip ~= nil and shotPlantLastClip ~= nil and newClip < shotPlantLastClip then
+                        -- Tir détecté ! Créer un projectile avec texture et mesh
+                        local textureId = "rbxassetid://TON_ID_TEXTURE"  -- Remplace par le vrai ID
+                        local meshId = "rbxassetid://TON_ID_MESH"        -- Remplace par le vrai ID
+
+                        local part = Instance.new("Part")
+                        part.Size = Vector3.new(0.5, 0.5, 0.5)  -- taille réduite
+                        local handle = tool:FindFirstChild("Handle")
+                        part.CFrame = handle and handle.CFrame or char.HumanoidRootPart.CFrame
+                        part.Anchored = false
+                        part.CanCollide = true  -- pour détecter les collisions
+                        part.Material = Enum.Material.SmoothPlastic
+                        -- Texture
+                        local texture = Instance.new("Texture")
+                        texture.Texture = textureId
+                        texture.Parent = part
+                        -- Mesh
+                        local mesh = Instance.new("SpecialMesh")
+                        mesh.MeshId = meshId
+                        mesh.Parent = part
+                        part.Parent = workspace
+
+                        -- Lancement à vitesse 30
+                        local bv = Instance.new("BodyVelocity")
+                        bv.MaxForce = Vector3.new(1e6, 1e6, 1e6)
+                        bv.Velocity = char.HumanoidRootPart.CFrame.LookVector * 30
+                        bv.Parent = part
+
+                        -- Détection de collision : détruire si la part touchée a CanCollide = false
+                        local function onTouched(otherPart)
+                            if otherPart and otherPart:IsA("BasePart") and otherPart.CanCollide == false then
+                                pcall(function() part:Destroy() end)
+                            end
+                        end
+                        part.Touched:Connect(onTouched)
+
+                        -- Nettoyage automatique après 10s (au cas où)
+                        task.delay(10, function()
+                            pcall(function() part:Destroy() end)
+                        end)
+
+                        pcall(function() if WindUI then WindUI:Notify({ Title = "Shot Plant", Content = "Tir !", Duration = 0.5 }) end end)
+                    end
+                    shotPlantLastClip = newClip
+                end)
+            end
+        else
+            -- Aucun outil valide
+            for _, conn in pairs(shotPlantConnections) do conn:Disconnect() end
+            table.clear(shotPlantConnections)
+            shotPlantCurrentTool = nil
+            shotPlantLastClip = nil
+        end
+    end
+
+    checkTool()
+
+    -- Surveiller le changement d'outil
+    shotPlantToolAddedConnection = LocalPlayer.CharacterAdded:Connect(function(char)
+        task.wait(0.2)
+        checkTool()
+    end)
+    if LocalPlayer.Character then
+        LocalPlayer.Character.ChildAdded:Connect(function(child)
+            if child:IsA("Tool") then
+                task.wait(0.1)
+                checkTool()
+            end
         end)
     end
+
+    -- Boucle de surveillance
+    shotPlantCheckConnection = RunService.Heartbeat:Connect(function()
+        if not Config.ShotPlantEnabled then return end
+        local char = LocalPlayer.Character
+        if not char then return end
+        local tool = char:FindFirstChildOfClass("Tool")
+        if tool ~= shotPlantCurrentTool then
+            checkTool()
+        end
+    end)
+
+    pcall(function() if WindUI then WindUI:Notify({ Title = "Shot Plant", Content = "Activé", Duration = 2 }) end end)
 end
+-- ===========================================
 
 function completeManhattanQuests()
     local userId = LocalPlayer.UserId
@@ -3093,7 +3203,7 @@ function BuildUI()
                 Config.GodmodeEnabled = v
                 if v then GodmodePreviousPosition = nil; GodmodeTeleported = false end
             end })
-            s:Slider({ Title = "Health Threshold", Value = {Min = 1, Max = 99, Default = 10}, Rounding = 0, Enabled = true, Callback = function(v) Config.GodmodeHealthThreshold = v end })
+            s:Slider({ Title = "Health Threshold", Value = {Min = 1, Max = 99, Default = 40}, Rounding = 0, Enabled = true, Callback = function(v) Config.GodmodeHealthThreshold = v end })
             s:Button({ Title = "Teleport to Baseplate", Callback = function()
                 local char = LocalPlayer.Character
                 if char and char:FindFirstChild("HumanoidRootPart") then
@@ -3286,7 +3396,7 @@ function BuildUI()
                 end
                 ReplicatedStorage:SetAttribute("StaggerEnabled", Config.StaggerEnabled)
             end })
-            s:Toggle({ Title = "Anti-Anchor (Unanchor HRP)", Default = false, Callback = function(v)
+            s:Toggle({ Title = "Anti-Anchor", Default = false, Callback = function(v)
                 Config.AntiAnchorEnabled = v
             end })
         end
@@ -3308,7 +3418,7 @@ function BuildUI()
             s:Colorpicker({ Title = "Player ESP Color", Default = Config.ColorPlayer, Callback = function(v) Config.ColorPlayer = v end })
         end
         do
-            local s = tab:Section({Title = "Friend ESP [ALPHA]", Opened = true, Icon = "user-plus"})
+            local s = tab:Section({Title = "Friend ESP", Opened = true, Icon = "user-plus"})
             s:Toggle({ Title = "Highlight Friends", Default = false, Callback = function(v) Config.HighlightFriends = v end })
             s:Toggle({ Title = "ESP Health Friend", Default = false, Callback = function(v) Config.HealthFriends = v end })
             s:Toggle({ Title = "Tracer Friend", Default = false, Callback = function(v) Config.TracerFriends = v end })
@@ -3492,7 +3602,7 @@ function BuildUI()
         do
             local s = tab:Section({Title = "Screen Customization", Opened = true, Icon = "brush"})
             s:Toggle({ Title = "Auto-Wipe Screen Blood", Default = false, Callback = function(v) Config.AutoWipeBlood = v end })
-            s:Button({ Title = "Instant Clean Screen", Callback = function()
+            s:Button({ Title = "Clean Screen", Callback = function()
                 local gui = LocalPlayer.PlayerGui:FindFirstChild("Gui")
                 if gui then
                     for _, v in pairs(gui:GetChildren()) do
@@ -3516,68 +3626,104 @@ function BuildUI()
                 end
             end })
             s:Button({ Title = "Break Gasmask", Callback = BreakGasmask })
+            -- ===== TOGGLE INFINITE NIGHT VISION CORRIGÉ (création des effets) =====
             s:Toggle({ Title = "Infinite Night Vision", Default = false, Callback = function(v)
                 Config.InfiniteNightVision = v
+
+                -- Fonction pour créer les effets NVG s'ils n'existent pas
+                local function ensureNVGEffects()
+                    local char = LocalPlayer.Character
+                    if not char then return end
+                    local hrp = char:FindFirstChild("HumanoidRootPart")
+                    if not hrp then return end
+
+                    local nvEffect = Lighting:FindFirstChild("__NVG_Effect")
+                    if not nvEffect then
+                        nvEffect = Instance.new("ColorCorrectionEffect")
+                        nvEffect.Name = "__NVG_Effect"
+                        nvEffect.Brightness = 0.1
+                        nvEffect.TintColor = Color3.fromRGB(97, 255, 195)
+                        nvEffect.Enabled = false
+                        nvEffect.Parent = Lighting
+                    end
+
+                    local nvBloom = Lighting:FindFirstChild("__NVG_Bloom")
+                    if not nvBloom then
+                        nvBloom = Instance.new("BloomEffect")
+                        nvBloom.Name = "__NVG_Bloom"
+                        nvBloom.Intensity = 3
+                        nvBloom.Size = 24
+                        nvBloom.Threshold = 1
+                        nvBloom.Enabled = false
+                        nvBloom.Parent = Lighting
+                    end
+
+                    local nvLight = char:FindFirstChild("__NVG_Light")
+                    if not nvLight then
+                        nvLight = Instance.new("PointLight")
+                        nvLight.Name = "__NVG_Light"
+                        nvLight.Enabled = false
+                        nvLight.Range = 1000
+                        nvLight.Brightness = 1
+                        nvLight.Parent = hrp
+                    end
+
+                    -- Vérifier s'il y a déjà une lumière sur la tête
+                    local head = char:FindFirstChild("Head")
+                    local headLight = head and head:FindFirstChildOfClass("PointLight")
+                    if not headLight then
+                        -- Pas besoin de créer, le jeu s'en charge parfois
+                    end
+                end
+
                 if v then
                     if InfiniteNVConnection then InfiniteNVConnection:Disconnect() end
                     if NVForcerConnection then NVForcerConnection:Disconnect() end
-                    InfiniteNVConnection = RunService.Heartbeat:Connect(function()
-                        if not Config.InfiniteNightVision then return end
-                        local nvEffect = Lighting:FindFirstChild("__NVG_Effect")
-                        if nvEffect and nvEffect.Enabled then
-                            local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-                            if playerGui then
-                                local nvHUD = playerGui:FindFirstChild("NightVisionHUD")
-                                if nvHUD and nvHUD:FindFirstChild("Container") then
-                                    local container = nvHUD.Container
-                                    local status = container:FindFirstChild("Status")
-                                    if status then
-                                        local batteryFrame = status:FindFirstChild("Battery")
-                                        if batteryFrame then
-                                            local bar = batteryFrame:FindFirstChild("Bar")
-                                            local percentage = batteryFrame:FindFirstChild("Percentage")
-                                            if bar and percentage then
-                                                bar.Size = UDim2.new(1, 0, bar.Size.Y.Scale, bar.Size.Y.Offset)
-                                                percentage.Text = "100%"
-                                            end
-                                        end
-                                        local warnings = status:FindFirstChild("Warnings")
-                                        if warnings then
-                                            local lowPower = warnings:FindFirstChild("LowPower")
-                                            if lowPower then lowPower.Visible = false end
-                                        end
-                                    end
-                                end
-                            end
-                        end
-                    end)
-                    NVForcerConnection = RunService.Stepped:Connect(function()
+
+                    ensureNVGEffects()  -- on crée les effets au moment de l'activation
+
+                    NVForcerConnection = RunService.Heartbeat:Connect(function()
                         if not Config.InfiniteNightVision then return end
                         local char = LocalPlayer.Character
                         if not char then return end
                         local hum = char:FindFirstChildOfClass("Humanoid")
                         if not hum or hum.Health <= 0 then return end
+
                         local nvEffect = Lighting:FindFirstChild("__NVG_Effect")
                         local nvBloom = Lighting:FindFirstChild("__NVG_Bloom")
                         local nvLight = char:FindFirstChild("__NVG_Light")
                         local headLight = char:FindFirstChild("Head") and char.Head:FindFirstChildOfClass("PointLight")
+
                         if nvEffect and not nvEffect.Enabled then nvEffect.Enabled = true end
                         if nvBloom and not nvBloom.Enabled then nvBloom.Enabled = true end
                         if nvLight and not nvLight.Enabled then nvLight.Enabled = true end
                         if headLight and not headLight.Enabled then headLight.Enabled = true end
-                        Lighting.Ambient = Color3.fromRGB(180,180,180)
-                        Lighting.OutdoorAmbient = Color3.fromRGB(180,180,180)
-                        Lighting.Brightness = 2
-                        Lighting.FogEnd = 999999999
-                        Lighting.FogStart = 999999999
+
+                        -- Seul le FogEnd est modifié, comme le vrai NVG
+                        Lighting.FogEnd = 185
+
+                        -- Forcer l'HUD à 100% et qualité IDEAL
                         local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
                         if playerGui then
                             local nvHUD = playerGui:FindFirstChild("NightVisionHUD")
-                            if nvHUD and not nvHUD.Enabled then nvHUD.Enabled = true end
                             if nvHUD and nvHUD:FindFirstChild("Container") then
                                 local container = nvHUD.Container
                                 local status = container:FindFirstChild("Status")
                                 if status then
+                                    local batteryFrame = status:FindFirstChild("Battery")
+                                    if batteryFrame then
+                                        local bar = batteryFrame:FindFirstChild("Bar")
+                                        local percentage = batteryFrame:FindFirstChild("Percentage")
+                                        if bar and percentage then
+                                            bar.Size = UDim2.new(1, 0, bar.Size.Y.Scale, bar.Size.Y.Offset)
+                                            percentage.Text = "100%"
+                                        end
+                                    end
+                                    local warnings = status:FindFirstChild("Warnings")
+                                    if warnings then
+                                        local lowPower = warnings:FindFirstChild("LowPower")
+                                        if lowPower then lowPower.Visible = false end
+                                    end
                                     local quality = status:FindFirstChild("Quality")
                                     if quality then
                                         local textLabel = quality:FindFirstChildOfClass("TextLabel")
@@ -3593,11 +3739,9 @@ function BuildUI()
                 else
                     if InfiniteNVConnection then InfiniteNVConnection:Disconnect() end
                     if NVForcerConnection then NVForcerConnection:Disconnect() end
-                    Lighting.Ambient = OrigAmbient
-                    Lighting.OutdoorAmbient = OrigOutdoorAmbient
-                    Lighting.Brightness = OrigBrightness
-                    Lighting.FogEnd = OrigFogEnd
-                    Lighting.FogStart = OrigFogStart
+                    -- Rétablir le brouillard normal
+                    Lighting.FogEnd = 75
+                    -- Désactiver les effets NVG
                     local nvEffect = Lighting:FindFirstChild("__NVG_Effect")
                     if nvEffect then nvEffect.Enabled = false end
                     local nvBloom = Lighting:FindFirstChild("__NVG_Bloom")
@@ -3619,6 +3763,7 @@ function BuildUI()
                     end
                 end
             end })
+            -- =================================================
         end
 
         do
@@ -3960,7 +4105,7 @@ function initializeUI()
         ToggleKey = Enum.KeyCode.K,
         Theme = "Amnethy",
         HideSearchBar = false,
-        Background = "rbxassetid://",
+        Background = "rbxassetid://102487955091707",
         Resizable = true,
         User = {
             Enabled = true,
@@ -3990,11 +4135,7 @@ function initializeUI()
     GameLastUpdateString = if successProduct and (productInfo and productInfo.Updated) then DateTime.fromUnixTimestamp(DateTime.fromIsoDate(productInfo.Updated).UnixTimestamp + -18000):FormatUniversalTime("MM/DD/YYYY HH:mm:ss", "en-us") .. " EST" else "n/a"
 
     BuildUI()
-
-    pcall(function() mainWindow:SelectTab(1) end)
-    pcall(function() WindUI:Notify({ Title = "News", Content = "v11 realesed", Duration = 5 }) end)
-    pcall(function() WindUI:Notify({ Title = "Sentinel v11.00.00", Content = "Script Loaded. Enjoy :D", Duration = 5 }) end)
-end
+end 
 
 WindUI:AddTheme({
     Name = "Amnethy",
