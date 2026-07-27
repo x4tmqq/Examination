@@ -3857,21 +3857,20 @@ function BuildUI()
         end
     end
 
+    -- ========================================================
+    -- SECTION QUESTS MODIFIÉE (fusion + verrouillage)
+    -- ========================================================
     do
         local tab = Tabs.Quests
 
         do
-            local s = tab:Section({Title = "Manhattan Quest", Opened = true, Icon = "scroll"})
+            local s = tab:Section({Title = "Quest Completion", Opened = true, Icon = "scroll"})
             s:Button({ 
                 Title = "Complete Manhattan Radiation Quest", 
                 Callback = completeManhattanQuests 
             })
-        end
-
-        do
-            local s = tab:Section({Title = "Elsher Quest", Opened = true, Icon = "scroll"})
-            s:Toggle({ 
-                Title = "Auto Elsher Quest [NOT IMPLEMENTED]", 
+            local elsherToggle = s:Toggle({ 
+                Title = "Elsher Quest Helper", 
                 Default = false, 
                 Callback = function(v)
                     if v then
@@ -3881,6 +3880,7 @@ function BuildUI()
                     end
                 end 
             })
+            elsherToggle:Lock()
         end
 
         do
