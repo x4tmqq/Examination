@@ -17,8 +17,10 @@ local StarterGui = game:GetService("StarterGui")
 local HttpService = game:GetService("HttpService")
 local BadgeService = game:GetService("BadgeService")
 local ProximityPromptService = game:GetService("ProximityPromptService")
+local CollectionService = game:GetService("CollectionService")
 
 local interfaceVisible = false
+local noclipConnection = nil
 
 function isPlayerCharacter(model)
     if not model or not model:IsA("Model") then return false end
@@ -65,7 +67,6 @@ Config = {
     FlySpeed = 50,
     FlyType = "CFrame",
     NoclipEnabled = false,
-    NoclipMethod = "Normal (All Parts)",
     AutoWipeBlood = false,
     GAttackEnabled = false,
     BypassCombatCooldowns = false,
@@ -1316,12 +1317,14 @@ function removeElephantFoot()
 end
 
 function removeArabicDud()
-    local arabic = workspace:FindFirstChild("Arabic")
+    local map = workspace:FindFirstChild("Map")
+    local lobbySpawn = map and map:FindFirstChild("LobbySpawn")
+    local arabic = lobbySpawn and lobbySpawn:FindFirstChild("Arabic")
     if arabic then
         arabic:Destroy()
         pcall(function() if WindUI then WindUI:Notify({ Title = "Success", Content = "Arabic dud removed", Duration = 3 }) end end)
     else
-        pcall(function() if WindUI then WindUI:Notify({ Title = "Failed", Content = "Arabic dud not found", Duration = 3 }) end end)
+        pcall(function() if WindUI then WindUI:Notify({ Title = "Failed", Content = "Arabic dud not found at Workspace.Map.LobbySpawn.Arabic", Duration = 5 }) end end)
     end
 end
 
@@ -3149,16 +3152,31 @@ WindUI.Services.SentinelKeyService = {
 local mainWindow = nil
 
 function BuildUI()
+    local mainTab = mainWindow:Tab({ Title = "Main", Icon = "house" })
+    local playerTab = mainWindow:Tab({ Title = "Player", Icon = "user" })
+    mainWindow:Divider()
+    local espTab = mainWindow:Tab({ Title = "ESP", Icon = "eye", Locked = true })
+    local combatTab = mainWindow:Tab({ Title = "Combat", Icon = "crosshair" })
+    local worldTab = mainWindow:Tab({ Title = "World", Icon = "globe" })
+    mainWindow:Divider()
+    local animTab = mainWindow:Tab({ Title = "Animations", Icon = "clapperboard" })
+    local questsTab = mainWindow:Tab({ Title = "Quests", Icon = "scroll" })
+    local utilitiesTab = mainWindow:Tab({ Title = "Utilities", Icon = "wrench" })
+    mainWindow:Divider()
+    local aboutTab = mainWindow:Tab({ Title = "About", Icon = "info" })
+    local othersTab = mainWindow:Tab({ Title = "Others Scripts", Icon = "code" })
+
     Tabs = {
-        Main = mainWindow:Tab({ Title = "Main", Icon = "house" }),
-        Player = mainWindow:Tab({ Title = "Player", Icon = "user" }),
-        ESP = mainWindow:Tab({ Title = "ESP", Icon = "eye" }),
-        Combat = mainWindow:Tab({ Title = "Combat", Icon = "crosshair" }),
-        World = mainWindow:Tab({ Title = "World", Icon = "globe" }),
-        Fun = mainWindow:Tab({ Title = "Animations", Icon = "clapperboard" }),
-        Quests = mainWindow:Tab({ Title = "Quests", Icon = "scroll" }),
-        Utilities = mainWindow:Tab({ Title = "Utilities", Icon = "wrench" }),
-        About = mainWindow:Tab({ Title = "About", Icon = "info" }),
+        Main = mainTab,
+        Player = playerTab,
+        ESP = espTab,
+        Combat = combatTab,
+        World = worldTab,
+        Animations = animTab,
+        Quests = questsTab,
+        Utilities = utilitiesTab,
+        About = aboutTab,
+        Others = othersTab,
     }
 
     do
@@ -3375,7 +3393,7 @@ function BuildUI()
             s:Input({ Title = "Character Name", Default = "", Placeholder = "Enter name", Callback = function(value) Config.CharacterName = value; applyNametags(LocalPlayer.Character) end })
             s:Input({ Title = "Rank", Default = "", Placeholder = "Enter rank", Callback = function(value) Config.CharacterRank = value; applyNametags(LocalPlayer.Character) end })
             s:Colorpicker({ Title = "Nametag Color", Default = Config.TagColor, Callback = function(value) Config.TagColor = value; applyNametags(LocalPlayer.Character) end })
-            s:Dropdown({ Title = "Team", Values = {"Menlo", "RIF", "RSU"}, Default = "Menlo", Callback = function(value) Config.Team = value; changeTeam(value) end })
+            s:Dropdown({ Title = "Team", Values = {"Menlo", "RAID", "RSU"}, Default = "Menlo", Callback = function(value) Config.Team = value; changeTeam(value) end })
         end
     end
 
@@ -3440,22 +3458,31 @@ function BuildUI()
             local s = tab:Section({Title = "Noclip", Opened = true, Icon = "ghost"})
             s:Toggle({ Title = "Enable Noclip", Default = false, Callback = function(v)
                 Config.NoclipEnabled = v
-                local char = LocalPlayer.Character
-                if char then
-                    local torso = char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
-                    if torso then
-                        torso.CanCollide = not v
+                if v then
+                    if not noclipConnection then
+                        noclipConnection = RunService.Heartbeat:Connect(function()
+                            if not Config.NoclipEnabled then return end
+                            local char = LocalPlayer.Character
+                            if char then
+                                for _, part in ipairs(char:GetDescendants()) do
+                                    if part:IsA("BasePart") then
+                                        part.CanCollide = false
+                                    end
+                                end
+                            end
+                        end)
                     end
-                end
-            end })
-            s:Dropdown({ Title = "Noclip Method", Values = {"Normal (All Parts)", "Advanced (Hook)"}, Default = "Normal (All Parts)", Callback = function(v)
-                Config.NoclipMethod = v
-                if Config.NoclipEnabled then
+                else
+                    if noclipConnection then
+                        noclipConnection:Disconnect()
+                        noclipConnection = nil
+                    end
                     local char = LocalPlayer.Character
                     if char then
-                        local torso = char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
-                        if torso then
-                            torso.CanCollide = false
+                        for _, part in ipairs(char:GetDescendants()) do
+                            if part:IsA("BasePart") then
+                                part.CanCollide = true
+                            end
                         end
                     end
                 end
@@ -3553,28 +3580,27 @@ function BuildUI()
             cf:Lock()
         end
 
-do
-    local s = tab:Section({Title = "Gun Mod", Opened = true, Icon = "crosshair"})
-    s:Toggle({ Title = "Hitbox Expander", Default = false, Callback = function(v) HitboxEnabled = v; UpdateAllHitboxes(HitboxEnabled) end })
-    s:Toggle({ Title = "Silencer", Default = false, Callback = function(v) Config.SilencerEnabled = v; updateSilencers(v) end })
-    s:Toggle({ Title = "Auto Reload", Default = false, Callback = function(v)
-        toggleAutoReload(v)
-    end })
-    local nr = s:Toggle({ Title = "No Recoil [PATCHED]", Default = false, Callback = function(v) Config.AntiCamShake = v end })
-    nr:Lock()
-s:Toggle({ 
-    Title = "Infinite Ammo", 
-    Desc = "WAIT ! This only work for NightStalker Quest",
-    Default = false, 
-    Callback = function(v)
-        toggleNightStalkerInfAmmo(v)
-    end 
-})
-    local shotPlantToggle = s:Toggle({ Title = "Shot Plant [PATCHED]", Default = false, Callback = function(v)
-        enableShotPlant(v)
-    end })
-    shotPlantToggle:Lock()
-end
+        do
+            local s = tab:Section({Title = "Gun Mod", Opened = true, Icon = "crosshair"})
+            s:Toggle({ Title = "Hitbox Expander", Default = false, Callback = function(v) HitboxEnabled = v; UpdateAllHitboxes(HitboxEnabled) end })
+            s:Toggle({ Title = "Silencer", Default = false, Callback = function(v) Config.SilencerEnabled = v; updateSilencers(v) end })
+            s:Toggle({ Title = "Auto Reload", Default = false, Callback = function(v)
+                toggleAutoReload(v)
+            end })
+            local nr = s:Toggle({ Title = "No Recoil [PATCHED]", Default = false, Callback = function(v) Config.AntiCamShake = v end })
+            nr:Lock()
+            s:Toggle({ 
+                Title = "Infinite Ammo", 
+                Desc = "WAIT ! This only work for NightStalker Quest",
+                Default = false, 
+                Callback = function(v)
+                    toggleNightStalkerInfAmmo(v)
+                end 
+            })
+            local shotPlantToggle = s:Toggle({ Title = "Shot Plant [PATCHED]", Default = false, Callback = function(v)
+            end })
+            shotPlantToggle:Lock()
+        end
 
         do
             local s = tab:Section({Title = "Shield Remover", Opened = true, Icon = "shield-x"})
@@ -3628,10 +3654,11 @@ end
 
         do
             local s = tab:Section({Title = "Weapons Auto Collect", Opened = true, Icon = "swords"})
-            s:Button({ 
+            local btn = s:Button({ 
                 Title = "Get rasonians Weapons", 
                 Callback = collectWeapons
             })
+            btn:Lock()
         end
     end
 
@@ -3660,7 +3687,7 @@ end
             s:Toggle({ Title = "Enable X-Ray", Default = false, Callback = function(v) XrayEnabled = v; updateXray() end })
             s:Divider()
             s:Slider({ Title = "Distance", Value = {Min = 1, Max = 1000, Default = 30}, Rounding = 0, Enabled = true, Callback = function(v) XrayDistance = v; if XrayEnabled then updateXray() end end })
-            s:Slider({ Title = "Transparency", Value = {Min = 0, Max = 1, Default = 0.3}, Rounding = 0, Enabled = true, Callback = function(v) XrayTransparency = v; updateXrayMaterialAndTransparency(); if XrayEnabled then updateXray() end end })
+            s:Slider({ Title = "Transparency", Value = {Min = 0, Max = 100, Default = 30}, Rounding = 0, Enabled = true, Callback = function(v) XrayTransparency = v / 100; updateXrayMaterialAndTransparency(); if XrayEnabled then updateXray() end end })
             s:Dropdown({ Title = "Material", Values = {"Plastic", "Neon", "ForceField", "Glass", "SmoothPlastic"}, Default = "ForceField", Callback = function(v)
                 Config.XrayMaterial = v
                 local materialMap = { Plastic = Enum.Material.Plastic, Neon = Enum.Material.Neon, ForceField = Enum.Material.ForceField, Glass = Enum.Material.Glass, SmoothPlastic = Enum.Material.SmoothPlastic }
@@ -3932,7 +3959,7 @@ end
     end
 
     do
-        local tab = Tabs.Fun
+        local tab = Tabs.Animations
         do
             local s = tab:Section({Title = "Toggle Animations", Opened = false, Icon = "toggle-right"})
             for name, id in pairs(toggleAnims) do
@@ -4053,15 +4080,32 @@ end
                         return
                     end
 
-                    local o = workspace:FindFirstChild("Classless_Badge")
-                    if o then
-                        char:PivotTo(o:GetPivot() * CFrame.new(0, 2, 0))
+                    local map = workspace:FindFirstChild("Map")
+                    local awarders = {}
+                    if map then
+                        for _, child in ipairs(map:GetDescendants()) do
+                            if child.Name == "SpecialBadgeAwarder" and child:IsA("BasePart") then
+                                table.insert(awarders, child)
+                            end
+                        end
+                    end
+                    if #awarders == 0 then
+                        for _, child in ipairs(workspace:GetDescendants()) do
+                            if child.Name == "SpecialBadgeAwarder" and child:IsA("BasePart") then
+                                table.insert(awarders, child)
+                            end
+                        end
+                    end
+
+                    if #awarders > 0 then
+                        local targetPart = awarders[1]
+                        char:PivotTo(targetPart.CFrame * CFrame.new(0, 2, 0))
                     else
                         pcall(function()
                             if WindUI then
                                 WindUI:Notify({
                                     Title = "Error",
-                                    Content = "Classless_Badge object not found.",
+                                    Content = "SpecialBadgeAwarder not found in Workspace.Map",
                                     Duration = 3
                                 })
                             end
@@ -4149,7 +4193,7 @@ end
                 if v then setupInstantProximity()
                 else if InstantProximityConnection then InstantProximityConnection:Disconnect(); InstantProximityConnection = nil end end
             end })
-            s:Toggle({ Title = "Auto Complete Proximity prompt [BETA]", Default = false, Callback = function(v)
+            s:Toggle({ Title = "Auto Complete Proximity prompt", Default = false, Callback = function(v)
                 Config.AutoCompleteProximityPrompt = v
                 if v then
                     autoCompleteProximity()
@@ -4212,13 +4256,127 @@ end
             pcall(function() if WindUI then WindUI:Notify({ Title = "Rscripts.net", Content = "Rscript Link copied", Duration = 3 }) end end)
         end })
     end
+
+    do
+        local tab = Tabs.Others
+
+        do
+            local s = tab:Section({Title = "SK22T", Opened = true, Icon = "code"})
+            s:Paragraph({
+                Title = "Information",
+                Desc = "Old script, some stuffs might not work. Require a key, paste your key in the textbox.",
+                Locked = true,
+            })
+            s:Space()
+
+            local keyInput = s:Input({
+                Title = "Key",
+                Default = "",
+                Placeholder = "Enter SK22T key here",
+                Callback = function(value)
+                end
+            })
+
+            s:Button({
+                Title = "Execute SK22T's script",
+                Callback = function()
+                    local key = keyInput.Value or ""
+                    if key == "" then
+                        pcall(function()
+                            if WindUI then WindUI:Notify({ Title = "SK22T", Content = "Please enter your key first.", Duration = 3, Icon = "alert-circle" }) end
+                        end)
+                        return
+                    end
+                    local scriptCode = string.format([[
+                        script_key = "%s"
+                        loadstring(game:HttpGet("https://api.luarmor.net/files/v3/loaders/6e4126af36402ce33dc9f17d53101153.lua"))()
+                    ]], key)
+                    local success, err = pcall(function()
+                        loadstring(scriptCode)()
+                    end)
+                    if not success then
+                        pcall(function()
+                            if WindUI then WindUI:Notify({ Title = "SK22T", Content = "Error: " .. tostring(err), Duration = 5, Icon = "x" }) end
+                        end)
+                    else
+                        pcall(function()
+                            if WindUI then WindUI:Notify({ Title = "SK22T", Content = "Script executed!", Duration = 3, Icon = "check" }) end
+                        end)
+                    end
+                end
+            })
+
+            s:Button({
+                Title = "Copy Key link",
+                Callback = function()
+                    local link = "https://ads.luarmor.net/get_key?for=Sk22t_Key-FekHQfHCPeev"
+                    if setclipboard then
+                        setclipboard(link)
+                    else
+                        pcall(function()
+                            local tb = Instance.new("TextBox")
+                            tb.Text = link
+                            tb:CaptureFocus()
+                            tb:ReleaseFocus()
+                            tb:Destroy()
+                        end)
+                    end
+                    pcall(function()
+                        if WindUI then WindUI:Notify({ Title = "SK22T", Content = "Key link copied!", Duration = 3, Icon = "check" }) end
+                    end)
+                end
+            })
+        end
+
+        do
+            local s = tab:Section({Title = "Ramirez's Bot Behavior", Opened = true, Icon = "bot"})
+            s:Button({
+                Title = "Execute Ramirez's Bot Behavior",
+                Callback = function()
+                    local success, err = pcall(function()
+                        loadstring(game:HttpGet("https://raw.githubusercontent.com/botgrant1/Roblox-Examination---Ramirez-BOT-Behavior/refs/heads/main/Main.lua"))()
+                    end)
+                    if not success then
+                        pcall(function()
+                            if WindUI then WindUI:Notify({ Title = "Ramirez's Bot Behavior", Content = "Error: " .. tostring(err), Duration = 5, Icon = "x" }) end
+                        end)
+                    else
+                        pcall(function()
+                            if WindUI then WindUI:Notify({ Title = "Ramirez's Bot Behavior", Content = "Script executed!", Duration = 3, Icon = "check" }) end
+                        end)
+                    end
+                end
+            })
+        end
+
+        do
+            local s = tab:Section({Title = "Hapiness Hub", Opened = true, Icon = "smile"})
+            s:Button({
+                Title = "Execute Hapiness Hub",
+                Callback = function()
+                    local success, err = pcall(function()
+                        loadstring(game:HttpGet("https://raw.githubusercontent.com/HappinessAlive/Happiness/refs/heads/indev/examination"))()
+                    end)
+                    if not success then
+                        pcall(function()
+                            if WindUI then WindUI:Notify({ Title = "Hapiness Hub", Content = "Error: " .. tostring(err), Duration = 5, Icon = "x" }) end
+                        end)
+                    else
+                        pcall(function()
+                            if WindUI then WindUI:Notify({ Title = "Hapiness Hub", Content = "Script executed!", Duration = 3, Icon = "check" }) end
+                        end)
+                    end
+                end
+            })
+        end
+    end
 end
 
 function initializeUI()
     if mainWindow then return end
 
     mainWindow = WindUI:CreateWindow({
-        Title = "Sentinel Script - Examination",
+        Title = "Sentinel - Examination",
         Author = "x4tmq",
         Icon = "door-open",
         Folder = "Sentinel",
@@ -4229,6 +4387,8 @@ function initializeUI()
         HideSearchBar = false,
         Background = "rbxassetid://0",
         Resizable = true,
+        Transparent = true,
+        BackgroundImageTransparency = 0.5,
         User = {
             Enabled = true,
             Anonymous = false,
@@ -4251,12 +4411,32 @@ function initializeUI()
         })
     end)
 
+    pcall(function()
+        mainWindow:Tag({
+            Title = "BETA",
+            Icon = "test-tube-diagonal",
+            Color = Color3.fromHex("#FFA500"),
+            Radius = 13
+        })
+    end)
+
+    mainWindow:EditOpenButton({
+        Title = "Sentinel - Examination",
+        Icon = "door-open",
+        CornerRadius = UDim.new(0, 24),
+        StrokeThickness = 2,
+        Color = ColorSequence.new(Color3.fromHex("FF0F7B"), Color3.fromHex("F89B29")),
+        OnlyMobile = false,
+        Enabled = true,
+        Draggable = true,
+    })
+
+    BuildUI()
+
     successProduct, productInfo = pcall(function()
         return MarketplaceService:GetProductInfo(game.PlaceId, Enum.InfoType.Asset)
     end)
     GameLastUpdateString = if successProduct and (productInfo and productInfo.Updated) then DateTime.fromUnixTimestamp(DateTime.fromIsoDate(productInfo.Updated).UnixTimestamp + -18000):FormatUniversalTime("MM/DD/YYYY HH:mm:ss", "en-us") .. " EST" else "n/a"
-
-    BuildUI()
 end 
 
 WindUI:AddTheme({
@@ -4277,7 +4457,6 @@ WindUI:AddTheme({
 WindUI:SetTheme("Amnethy")
 
 local playerName = LocalPlayer.Name
-
 
 if not mainWindow then
     initializeUI()
