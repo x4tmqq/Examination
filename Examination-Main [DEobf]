@@ -4804,5 +4804,5 @@ end)
 if Window and WindUI then
     pcall(function() Window:SelectTab(1) end)
     pcall(function() WindUI:Notify({ Title = "News", Content = "h", Duration = 5 }) end)
-    pcall(function() WindUI:Notify({ Title = "Sentinel v13.00.00", Content = "Script Loaded successfully,\n Welcome, user.", Duration = 5 }) end)
+    pcall(function() WindUI:Notify({ Title = "Sentinel v13.50.00", Content = "Script Loaded successfully,\n Welcome, user.", Duration = 5 }) end)
 end
