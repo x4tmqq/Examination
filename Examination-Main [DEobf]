@@ -19,6 +19,111 @@ local BadgeService = game:GetService("BadgeService")
 local ProximityPromptService = game:GetService("ProximityPromptService")
 local CollectionService = game:GetService("CollectionService")
 
+local loadingScreenGui = nil
+local loadingFrame = nil
+local loadingSound = nil
+local loadingText = nil
+
+local function setupLoadingScreen()
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "SentinelLoadingScreen"
+    gui.ResetOnSpawn = false
+    gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    gui.IgnoreGuiInset = true
+    gui.Parent = CoreGui
+
+    local frame = Instance.new("Frame")
+    frame.Name = "LoadingFrame"
+    frame.Size = UDim2.new(1, 0, 1, 0)
+    frame.BackgroundColor3 = Color3.new(0, 0, 0)
+    frame.BorderSizePixel = 0
+    frame.ZIndex = 999
+    frame.BackgroundTransparency = 1
+    frame.Parent = gui
+
+    local text = Instance.new("TextLabel")
+    text.Size = UDim2.new(1, 0, 0.2, 0)
+    text.Position = UDim2.new(0, 0, 0.4, 0)
+    text.BackgroundTransparency = 1
+    text.Text = "Sentinel is loading..."
+    text.TextColor3 = Color3.new(1, 1, 1)
+    text.Font = Enum.Font.GothamBold
+    text.TextSize = 24
+    text.TextStrokeTransparency = 0.5
+    text.ZIndex = 1000
+    text.TextTransparency = 1
+    text.Parent = frame
+
+    local tweenInfo = TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    TweenService:Create(frame, tweenInfo, { BackgroundTransparency = 0 }):Play()
+    TweenService:Create(text, tweenInfo, { TextTransparency = 0 }):Play()
+
+    local sound = nil
+    local file = "sentinel_loading.mp3"
+    local url = "https://github.com/x4tmqq/MM2/raw/refs/heads/main/H.LA%20DROGUE,%20@1PLICATION%20%20-%20SEKLENLAND%20%2310.mp3"
+
+    if not isfile(file) then
+        local success, err = pcall(function()
+            local response = request({
+                Url = url,
+                Method = "GET"
+            })
+            if response.StatusCode == 200 then
+                writefile(file, response.Body)
+            else
+                warn("Impossible de télécharger la musique : " .. response.StatusCode)
+            end
+        end)
+        if not success then
+            warn("Erreur lors du téléchargement de la musique : " .. tostring(err))
+        end
+    end
+
+    if isfile(file) then
+        local soundId = getcustomasset(file)
+        sound = Instance.new("Sound")
+        sound.SoundId = soundId
+        sound.Volume = 1
+        sound.Looped = true
+        sound.Parent = game:GetService("SoundService")
+        sound:Play()
+    else
+        warn("Fichier musique introuvable après téléchargement")
+    end
+
+    return gui, frame, sound
+end
+
+local function dismissLoadingScreen(gui, frame, sound)
+    if not gui then return end
+    if frame then
+        local tweenInfo = TweenInfo.new(2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        local tween = TweenService:Create(frame, tweenInfo, { BackgroundTransparency = 1 })
+        tween:Play()
+        tween.Completed:Connect(function()
+            if gui then gui:Destroy() end
+        end)
+        for _, child in ipairs(frame:GetChildren()) do
+            if child:IsA("TextLabel") then
+                TweenService:Create(child, tweenInfo, { TextTransparency = 1 }):Play()
+            end
+        end
+    else
+        gui:Destroy()
+    end
+    if sound then
+        local tweenInfo = TweenInfo.new(2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        local tween = TweenService:Create(sound, tweenInfo, { Volume = 0 })
+        tween:Play()
+        tween.Completed:Connect(function()
+            sound:Stop()
+            sound:Destroy()
+        end)
+    end
+end
+
+loadingScreenGui, loadingFrame, loadingSound = setupLoadingScreen()
+
 local interfaceVisible = false
 local noclipConnection = nil
 
@@ -2187,12 +2292,10 @@ RunService.RenderStepped:Connect(function(dt)
         end
     end
 
-    -- ESP Rendering with filters
     local myChar = LocalPlayer.Character
     local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
     if not myHrp then return end
 
-    -- Players ESP
     for _, player in pairs(Players:GetPlayers()) do
         if player ~= LocalPlayer then
             local char = player.Character
@@ -2259,7 +2362,6 @@ RunService.RenderStepped:Connect(function(dt)
         end
     end
 
-    -- Mobs & Bosses ESP with selection filtering
     for i = #CachedMobs, 1, -1 do
         local obj = CachedMobs[i]
         if obj and obj.Parent then
@@ -4683,6 +4785,12 @@ local playerName = LocalPlayer.Name
 if not mainWindow then
     initializeUI()
 end
+
+
+task.spawn(function()
+    dismissLoadingScreen(loadingScreenGui, loadingFrame, loadingSound)
+end)
+
 interfaceVisible = true
 mainWindow.Visible = true
 
@@ -4804,5 +4912,5 @@ end)
 if Window and WindUI then
     pcall(function() Window:SelectTab(1) end)
     pcall(function() WindUI:Notify({ Title = "News", Content = "h", Duration = 5 }) end)
-    pcall(function() WindUI:Notify({ Title = "Sentinel v13.50.00", Content = "Script Loaded successfully,\n Welcome, user.", Duration = 5 }) end)
+    pcall(function() WindUI:Notify({ Title = "Sentinel v13.00.00", Content = "Script Loaded successfully,\n Welcome, user.", Duration = 5 }) end)
 end
