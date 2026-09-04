@@ -19,113 +19,11 @@ local BadgeService = game:GetService("BadgeService")
 local ProximityPromptService = game:GetService("ProximityPromptService")
 local CollectionService = game:GetService("CollectionService")
 
-local loadingScreenGui = nil
-local loadingFrame = nil
-local loadingSound = nil
-local loadingText = nil
-
-local function setupLoadingScreen()
-    local gui = Instance.new("ScreenGui")
-    gui.Name = "SentinelLoadingScreen"
-    gui.ResetOnSpawn = false
-    gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    gui.IgnoreGuiInset = true
-    gui.Parent = CoreGui
-
-    local frame = Instance.new("Frame")
-    frame.Name = "LoadingFrame"
-    frame.Size = UDim2.new(1, 0, 1, 0)
-    frame.BackgroundColor3 = Color3.new(0, 0, 0)
-    frame.BorderSizePixel = 0
-    frame.ZIndex = 999
-    frame.BackgroundTransparency = 1
-    frame.Parent = gui
-
-    local text = Instance.new("TextLabel")
-    text.Size = UDim2.new(1, 0, 0.2, 0)
-    text.Position = UDim2.new(0, 0, 0.4, 0)
-    text.BackgroundTransparency = 1
-    text.Text = "Sentinel is loading..."
-    text.TextColor3 = Color3.new(1, 1, 1)
-    text.Font = Enum.Font.GothamBold
-    text.TextSize = 24
-    text.TextStrokeTransparency = 0.5
-    text.ZIndex = 1000
-    text.TextTransparency = 1
-    text.Parent = frame
-
-    local tweenInfo = TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-    TweenService:Create(frame, tweenInfo, { BackgroundTransparency = 0 }):Play()
-    TweenService:Create(text, tweenInfo, { TextTransparency = 0 }):Play()
-
-    local sound = nil
-    local file = "sentinel_loading.mp3"
-    local url = "https://github.com/x4tmqq/MM2/raw/refs/heads/main/H.LA%20DROGUE,%20@1PLICATION%20%20-%20SEKLENLAND%20%2310.mp3"
-
-    if not isfile(file) then
-        local success, err = pcall(function()
-            local response = request({
-                Url = url,
-                Method = "GET"
-            })
-            if response.StatusCode == 200 then
-                writefile(file, response.Body)
-            else
-                warn("Impossible de télécharger la musique : " .. response.StatusCode)
-            end
-        end)
-        if not success then
-            warn("Erreur lors du téléchargement de la musique : " .. tostring(err))
-        end
-    end
-
-    if isfile(file) then
-        local soundId = getcustomasset(file)
-        sound = Instance.new("Sound")
-        sound.SoundId = soundId
-        sound.Volume = 1
-        sound.Looped = true
-        sound.Parent = game:GetService("SoundService")
-        sound:Play()
-    else
-        warn("Fichier musique introuvable après téléchargement")
-    end
-
-    return gui, frame, sound
-end
-
-local function dismissLoadingScreen(gui, frame, sound)
-    if not gui then return end
-    if frame then
-        local tweenInfo = TweenInfo.new(2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-        local tween = TweenService:Create(frame, tweenInfo, { BackgroundTransparency = 1 })
-        tween:Play()
-        tween.Completed:Connect(function()
-            if gui then gui:Destroy() end
-        end)
-        for _, child in ipairs(frame:GetChildren()) do
-            if child:IsA("TextLabel") then
-                TweenService:Create(child, tweenInfo, { TextTransparency = 1 }):Play()
-            end
-        end
-    else
-        gui:Destroy()
-    end
-    if sound then
-        local tweenInfo = TweenInfo.new(2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-        local tween = TweenService:Create(sound, tweenInfo, { Volume = 0 })
-        tween:Play()
-        tween.Completed:Connect(function()
-            sound:Stop()
-            sound:Destroy()
-        end)
-    end
-end
-
-loadingScreenGui, loadingFrame, loadingSound = setupLoadingScreen()
-
 local interfaceVisible = false
 local noclipConnection = nil
+
+-- Liste des noms de boss (pour reconnaissance)
+local BOSS_NAMES = {"Chimera", "Dave", "Gilbert", "Mikhail", "SIN", "Cerberus"}
 
 function isPlayerCharacter(model)
     if not model or not model:IsA("Model") then return false end
@@ -253,6 +151,8 @@ Config = {
     EnableBossESP = false,
     EnableMobsESP = false,
     EnablePlayersESP = false,
+    EnableAllBosses = false,
+    EnableAllMobs = false,
     SelectedBosses = {},
     SelectedMobs = {},
 }
@@ -2121,58 +2021,44 @@ if ClientEvents and ClientEvents:FindFirstChild("client") and ClientEvents.clien
     end)
 end
 
-function checkMob(obj)
-    if obj:IsA("Model") and obj:FindFirstChild("HumanoidRootPart") and obj:FindFirstChildOfClass("Humanoid") then
-        if obj ~= LocalPlayer.Character and obj.Name ~= LocalPlayer.Name and not Players:GetPlayerFromCharacter(obj) and not table.find(CachedMobs, obj) then
-            table.insert(CachedMobs, obj)
-            local mobId = obj:GetDebugId()
-            obj.AncestryChanged:Connect(function(child, parent)
-                if parent == nil then
-                    local line = tracerCache[mobId]
-                    if line then line.Visible = false end
-                    for i, m in ipairs(CachedMobs) do
-                        if m == obj then
-                            table.remove(CachedMobs, i)
-                            break
-                        end
-                    end
-                end
-            end)
+-- ============================================================
+-- NOUVELLE GESTION DU CACHE DES MOBS (inclut désormais les boss)
+-- ============================================================
+local CharactersFolder = workspace:FindFirstChild("Characters")
+
+function updateMobCache()
+    if not CharactersFolder then
+        CachedMobs = {}
+        return
+    end
+    local newMobs = {}
+    for _, child in ipairs(CharactersFolder:GetChildren()) do
+        if child:IsA("Model") and child:FindFirstChildOfClass("Humanoid") then
+            -- Exclure les joueurs et le personnage local
+            if not Players:GetPlayerFromCharacter(child) and child ~= LocalPlayer.Character then
+                -- On inclut TOUS les modèles (mobs et bosses)
+                table.insert(newMobs, child)
+            end
         end
     end
+    CachedMobs = newMobs
 end
 
-task.spawn(function()
-    local allDescendants = workspace:GetDescendants()
-    for i, obj in ipairs(allDescendants) do
-        checkMob(obj)
-        if i % 200 == 0 then task.wait() end
-    end
-end)
+-- Mise à jour initiale
+updateMobCache()
 
-workspace.DescendantAdded:Connect(function(descendant)
-    if descendant:IsA("Model") then
-        task.wait(0.3)
-        checkMob(descendant)
-    end
-end)
+-- Surveillance du dossier Characters
+if CharactersFolder then
+    CharactersFolder.ChildAdded:Connect(function(child)
+        task.wait(0.3) -- laisser le temps au modèle de se charger
+        updateMobCache()
+    end)
+    CharactersFolder.ChildRemoved:Connect(function()
+        updateMobCache()
+    end)
+end
 
-UserInputService.JumpRequest:Connect(function()
-    local character = LocalPlayer.Character
-    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-    local hrp = character and character:FindFirstChild("HumanoidRootPart")
-    if not hrp or not humanoid then return end
-    local actualJumpPower = Config.JumpPowerEnabled and Config.JumpPowerValue or 50
-    if Config.InfiniteJump then
-        hrp.Velocity = Vector3.new(hrp.Velocity.X, actualJumpPower, hrp.Velocity.Z)
-        humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-    end
-    if Config.JumpBypassActive and not Config.InfiniteJump then
-        if humanoid.FloorMaterial ~= Enum.Material.Air then
-            hrp.Velocity = Vector3.new(hrp.Velocity.X, actualJumpPower, hrp.Velocity.Z)
-        end
-    end
-end)
+-- ============================================================
 
 function getTracer(id)
     if not Drawing then return nil end
@@ -2292,10 +2178,12 @@ RunService.RenderStepped:Connect(function(dt)
         end
     end
 
+    -- ESP Rendering
     local myChar = LocalPlayer.Character
     local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
     if not myHrp then return end
 
+    -- Players ESP
     for _, player in pairs(Players:GetPlayers()) do
         if player ~= LocalPlayer then
             local char = player.Character
@@ -2362,26 +2250,17 @@ RunService.RenderStepped:Connect(function(dt)
         end
     end
 
+    -- Mobs & Bosses (maintenant CachedMobs contient les deux)
     for i = #CachedMobs, 1, -1 do
         local obj = CachedMobs[i]
         if obj and obj.Parent then
-            if obj == myChar or obj == LocalPlayer.Character or obj.Name == LocalPlayer.Name or Players:GetPlayerFromCharacter(obj) then
-                if obj:FindFirstChild("SentinelMobHL") then obj.SentinelMobHL:Destroy() end
-                local badHrp = obj:FindFirstChild("HumanoidRootPart")
-                if badHrp and badHrp:FindFirstChild("SentinelMobHP") then badHrp.SentinelMobHP:Destroy() end
-                local badId = obj:GetDebugId()
-                if tracerCache[badId] then tracerCache[badId].Visible = false end
-                table.remove(CachedMobs, i)
-                continue
-            end
             local mhrp = obj:FindFirstChild("HumanoidRootPart")
             local mhum = obj:FindFirstChildOfClass("Humanoid")
             if mhrp and mhum then
                 local distance = (myHrp.Position - mhrp.Position).Magnitude
                 local mobId = obj:GetDebugId()
-                local bossList = {"Chimera", "Dave", "Gilbert", "Mikhail", "SIN", "Cerberus"}
                 local isBoss = false
-                for _, bname in ipairs(bossList) do
+                for _, bname in ipairs(BOSS_NAMES) do
                     if obj.Name == bname then
                         isBoss = true
                         break
@@ -2391,21 +2270,29 @@ RunService.RenderStepped:Connect(function(dt)
                 local enable = false
                 local color = Config.ColorMobs
                 if isBoss then
-                    if Config.EnableBossESP and #Config.SelectedBosses > 0 then
-                        for _, selected in ipairs(Config.SelectedBosses) do
-                            if selected == obj.Name then
-                                enable = true
-                                break
+                    if Config.EnableBossESP then
+                        if Config.EnableAllBosses then
+                            enable = true
+                        elseif #Config.SelectedBosses > 0 then
+                            for _, selected in ipairs(Config.SelectedBosses) do
+                                if selected == obj.Name then
+                                    enable = true
+                                    break
+                                end
                             end
                         end
                     end
                     color = Config.ColorBosses
                 else
-                    if Config.EnableMobsESP and #Config.SelectedMobs > 0 then
-                        for _, selected in ipairs(Config.SelectedMobs) do
-                            if selected == obj.Name then
-                                enable = true
-                                break
+                    if Config.EnableMobsESP then
+                        if Config.EnableAllMobs then
+                            enable = true
+                        elseif #Config.SelectedMobs > 0 then
+                            for _, selected in ipairs(Config.SelectedMobs) do
+                                if selected == obj.Name then
+                                    enable = true
+                                    break
+                                end
                             end
                         end
                     end
@@ -3820,10 +3707,9 @@ function BuildUI()
                 local chars = workspace:FindFirstChild("Characters")
                 if not chars then return {} end
                 local bossNames = {}
-                local bossList = {"Chimera", "Dave", "Gilbert", "Mikhail", "SIN", "Cerberus"}
                 for _, child in ipairs(chars:GetChildren()) do
                     if child:IsA("Model") and child:FindFirstChildOfClass("Humanoid") then
-                        for _, bossName in ipairs(bossList) do
+                        for _, bossName in ipairs(BOSS_NAMES) do
                             if child.Name == bossName then
                                 table.insert(bossNames, child.Name)
                                 break
@@ -3837,12 +3723,11 @@ function BuildUI()
                 local chars = workspace:FindFirstChild("Characters")
                 if not chars then return {} end
                 local mobNames = {}
-                local bossList = {"Chimera", "Dave", "Gilbert", "Mikhail", "SIN", "Cerberus"}
                 for _, child in ipairs(chars:GetChildren()) do
                     if child:IsA("Model") and child:FindFirstChildOfClass("Humanoid") then
                         if not Players:GetPlayerFromCharacter(child) then
                             local isBoss = false
-                            for _, bossName in ipairs(bossList) do
+                            for _, bossName in ipairs(BOSS_NAMES) do
                                 if child.Name == bossName then
                                     isBoss = true
                                     break
@@ -3876,13 +3761,19 @@ function BuildUI()
             })
         end
 
+        -- Section Boss ESP : toggle "Enable All" en premier, puis Divider
         do
             local s = tab:Section({Title = "Boss ESP", Opened = true, Icon = "skull"})
+            s:Toggle({ Title = "Enable All Bosses", Default = false, Callback = function(v) Config.EnableAllBosses = v end })
+            s:Divider()
             s:Toggle({ Title = "Enable Bosses ESP", Default = false, Callback = function(v) Config.EnableBossESP = v end })
         end
 
+        -- Section Mobs ESP : toggle "Enable All" en premier, puis Divider
         do
             local s = tab:Section({Title = "Mobs ESP", Opened = true, Icon = "syringe"})
+            s:Toggle({ Title = "Enable All Mobs", Default = false, Callback = function(v) Config.EnableAllMobs = v end })
+            s:Divider()
             s:Toggle({ Title = "Enable Mobs ESP", Default = false, Callback = function(v) Config.EnableMobsESP = v end })
         end
 
@@ -4785,12 +4676,6 @@ local playerName = LocalPlayer.Name
 if not mainWindow then
     initializeUI()
 end
-
-
-task.spawn(function()
-    dismissLoadingScreen(loadingScreenGui, loadingFrame, loadingSound)
-end)
-
 interfaceVisible = true
 mainWindow.Visible = true
 
