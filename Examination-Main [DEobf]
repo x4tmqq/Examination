@@ -4549,7 +4549,7 @@ function BuildUI()
                 Title = "Execute Ramirez's Bot Behavior",
                 Callback = function()
                     local success, err = pcall(function()
-                        loadstring(game:HttpGet("https://raw.githubusercontent.com/botgrant1/Roblox-Examination---Ramirez-BOT-Behavior/refs/heads/main/Main.lua"))()
+                        loadstring(game:HttpGet("https://raw.githubusercontent.com/botgrant1/Roblox-Examination---Ramirez-BOT-Behavior/refs/heads/main/main.lua"))()
                     end)
                     if not success then
                         pcall(function()
