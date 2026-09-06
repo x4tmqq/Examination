@@ -153,6 +153,29 @@ Config = {
     WindowTheme = "Amnethy",
     WindowBackground = "",
     NotificationSound = "",
+
+    BoxThickness = 2,
+    BoxAutoThickness = true,
+
+    BoxPlayers = false,
+    BoxFriends = false,
+    BoxMobs = false,
+    BoxBosses = false,
+
+    ShowNamePlayers = false,
+    ShowNameFriends = false,
+    ShowNameMobs = false,
+    ShowNameBosses = false,
+
+    ShowHealthPlayers = false,
+    ShowHealthFriends = false,
+    ShowHealthMobs = false,
+    ShowHealthBosses = false,
+
+    ShowDistancePlayers = false,
+    ShowDistanceFriends = false,
+    ShowDistanceMobs = false,
+    ShowDistanceBosses = false,
 }
 
 local BOSS_NAMES = {
@@ -2094,6 +2117,228 @@ UserInputService.JumpRequest:Connect(function()
     end
 end)
 
+local BoxLines = {}
+
+local function CreateBoxLines(color, thickness)
+    local lines = {}
+    for i = 1, 8 do
+        local line = Drawing.new("Line")
+        line.Visible = false
+        line.From = Vector2.new(0, 0)
+        line.To = Vector2.new(0, 0)
+        line.Color = color
+        line.Thickness = thickness
+        line.Transparency = 1
+        lines[i] = line
+    end
+    return lines
+end
+
+local function DestroyBoxLines(box)
+    if not box then return end
+    for _, line in ipairs(box) do
+        pcall(function() line:Remove() end)
+    end
+end
+
+local function UpdateBox(box, model, color, thickness)
+    if not box or not model then return end
+    local hrp = model:FindFirstChild("HumanoidRootPart")
+    if not hrp then
+        for _, line in ipairs(box) do line.Visible = false end
+        return
+    end
+    local hum = model:FindFirstChildOfClass("Humanoid")
+    if not hum or hum.Health <= 0 then
+        for _, line in ipairs(box) do line.Visible = false end
+        return
+    end
+
+    local hrpPos = hrp.Position
+    local camPos = Camera.CFrame.Position
+    local direction = (hrpPos - camPos).Unit
+    local cf = CFrame.lookAt(hrpPos, hrpPos + direction)
+    local sizeX = hrp.Size.X
+    local sizeY = hrp.Size.Y * 1.5
+
+    local TL = (cf * CFrame.new(-sizeX, sizeY, 0)).p
+    local TR = (cf * CFrame.new(sizeX, sizeY, 0)).p
+    local BL = (cf * CFrame.new(-sizeX, -sizeY, 0)).p
+    local BR = (cf * CFrame.new(sizeX, -sizeY, 0)).p
+
+    local tlv, tv = Camera:WorldToViewportPoint(TL)
+    local trv, _ = Camera:WorldToViewportPoint(TR)
+    local blv, _ = Camera:WorldToViewportPoint(BL)
+    local brv, _ = Camera:WorldToViewportPoint(BR)
+
+    if not tv then
+        for _, line in ipairs(box) do line.Visible = false end
+        return
+    end
+
+    local distance = (hrpPos - camPos).Magnitude
+    local offset = math.clamp(1 / distance * 750, 2, 300)
+
+    box[1].From = Vector2.new(tlv.X, tlv.Y)
+    box[1].To = Vector2.new(tlv.X + offset, tlv.Y)
+    box[2].From = Vector2.new(tlv.X, tlv.Y)
+    box[2].To = Vector2.new(tlv.X, tlv.Y + offset)
+
+    box[3].From = Vector2.new(trv.X, trv.Y)
+    box[3].To = Vector2.new(trv.X - offset, trv.Y)
+    box[4].From = Vector2.new(trv.X, trv.Y)
+    box[4].To = Vector2.new(trv.X, trv.Y + offset)
+
+    box[5].From = Vector2.new(blv.X, blv.Y)
+    box[5].To = Vector2.new(blv.X + offset, blv.Y)
+    box[6].From = Vector2.new(blv.X, blv.Y)
+    box[6].To = Vector2.new(blv.X, blv.Y - offset)
+
+    box[7].From = Vector2.new(brv.X, brv.Y)
+    box[7].To = Vector2.new(brv.X - offset, brv.Y)
+    box[8].From = Vector2.new(brv.X, brv.Y)
+    box[8].To = Vector2.new(brv.X, brv.Y - offset)
+
+    for _, line in ipairs(box) do
+        line.Color = color
+        if Config.BoxAutoThickness then
+            local thick = math.clamp(1 / distance * 100, 1, 4)
+            line.Thickness = thick
+        else
+            line.Thickness = thickness
+        end
+        line.Visible = true
+        line.Transparency = 1
+    end
+end
+
+local function HideBox(box)
+    if not box then return end
+    for _, line in ipairs(box) do
+        line.Visible = false
+    end
+end
+
+local InfoBillboards = {}
+
+local function GetInfoBillboard(model, category)
+    if not model then return nil end
+    local hrp = model:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+
+    local bbg = hrp:FindFirstChild("SentinelInfoBBG")
+    if not bbg then
+        bbg = Instance.new("BillboardGui")
+        bbg.Name = "SentinelInfoBBG"
+        bbg.Size = UDim2.new(0, 200, 0, 60)
+        bbg.AlwaysOnTop = true
+        bbg.StudsOffset = Vector3.new(0, 3.5, 0)
+        bbg.Adornee = hrp
+        bbg.Parent = hrp
+
+        local layout = Instance.new("UIListLayout")
+        layout.FillDirection = Enum.FillDirection.Vertical
+        layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+        layout.VerticalAlignment = Enum.VerticalAlignment.Top
+        layout.SortOrder = Enum.SortOrder.LayoutOrder
+        layout.Parent = bbg
+
+        local nameLabel = Instance.new("TextLabel")
+        nameLabel.Name = "Name"
+        nameLabel.Size = UDim2.new(1, 0, 0, 16)
+        nameLabel.BackgroundTransparency = 1
+        nameLabel.TextStrokeTransparency = 0.5
+        nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        nameLabel.Font = Enum.Font.SourceSansBold
+        nameLabel.TextSize = 14
+        nameLabel.Visible = false
+        nameLabel.Parent = bbg
+
+        local healthLabel = Instance.new("TextLabel")
+        healthLabel.Name = "Health"
+        healthLabel.Size = UDim2.new(1, 0, 0, 14)
+        healthLabel.BackgroundTransparency = 1
+        healthLabel.TextStrokeTransparency = 0.5
+        healthLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        healthLabel.Font = Enum.Font.SourceSans
+        healthLabel.TextSize = 12
+        healthLabel.Visible = false
+        healthLabel.Parent = bbg
+
+        local distanceLabel = Instance.new("TextLabel")
+        distanceLabel.Name = "Distance"
+        distanceLabel.Size = UDim2.new(1, 0, 0, 14)
+        distanceLabel.BackgroundTransparency = 1
+        distanceLabel.TextStrokeTransparency = 0.5
+        distanceLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+        distanceLabel.Font = Enum.Font.SourceSans
+        distanceLabel.TextSize = 12
+        distanceLabel.Visible = false
+        distanceLabel.Parent = bbg
+    end
+    return bbg
+end
+
+local function UpdateInfo(model, category, color, showName, showHealth, showDistance, distance)
+    if not model then return end
+    local bbg = GetInfoBillboard(model, category)
+    if not bbg then return end
+
+    local nameLabel = bbg:FindFirstChild("Name")
+    local healthLabel = bbg:FindFirstChild("Health")
+    local distLabel = bbg:FindFirstChild("Distance")
+
+    if nameLabel then
+        nameLabel.Visible = showName
+        if showName then
+            local player = Players:GetPlayerFromCharacter(model)
+            local nameText = player and player.Name or model.Name
+            nameLabel.Text = nameText
+            nameLabel.TextColor3 = color
+        end
+    end
+
+    if healthLabel then
+        healthLabel.Visible = showHealth
+        if showHealth then
+            local hum = model:FindFirstChildOfClass("Humanoid")
+            if hum then
+                local hp = math.round(hum.Health)
+                healthLabel.Text = hp .. " HP"
+                healthLabel.TextColor3 = color
+            end
+        end
+    end
+
+    if distLabel then
+        distLabel.Visible = showDistance
+        if showDistance and distance then
+            distLabel.Text = string.format("%.1f m", distance)
+            distLabel.TextColor3 = color
+        end
+    end
+end
+
+local function DestroyInfo(model)
+    if not model then return end
+    local hrp = model:FindFirstChild("HumanoidRootPart")
+    if hrp then
+        local bbg = hrp:FindFirstChild("SentinelInfoBBG")
+        if bbg then bbg:Destroy() end
+    end
+end
+
+local function CleanupESP()
+    for model, box in pairs(BoxLines) do
+        DestroyBoxLines(box)
+    end
+    table.clear(BoxLines)
+    for model, _ in pairs(InfoBillboards) do
+        DestroyInfo(model)
+    end
+    table.clear(InfoBillboards)
+end
+
 RunService.RenderStepped:Connect(function(dt)
     local character = LocalPlayer.Character
     if not character then return end
@@ -2193,6 +2438,157 @@ RunService.RenderStepped:Connect(function(dt)
             if hrp and hrp.Anchored then
                 hrp.Anchored = false
             end
+        end
+    end
+
+    local myChar = LocalPlayer.Character
+    local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    if not myHrp then return end
+
+    local toRemove = {}
+    for model, _ in pairs(BoxLines) do
+        if not model or not model.Parent then
+            table.insert(toRemove, model)
+        end
+    end
+    for _, model in ipairs(toRemove) do
+        if BoxLines[model] then
+            DestroyBoxLines(BoxLines[model])
+            BoxLines[model] = nil
+        end
+        DestroyInfo(model)
+        InfoBillboards[model] = nil
+    end
+
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local char = player.Character
+            local phrp = char and char:FindFirstChild("HumanoidRootPart")
+            local phum = char and char:FindFirstChildOfClass("Humanoid")
+            if phrp and phum then
+                local distance = (myHrp.Position - phrp.Position).Magnitude
+                local isFriend = LocalPlayer:IsFriendsWith(player.UserId)
+                local category = isFriend and "Friend" or "Player"
+                local color = isFriend and Config.ColorFriends or Config.ColorPlayer
+                local highlight = isFriend and Config.HighlightFriends or Config.HighlightPlayer
+                local box = isFriend and Config.BoxFriends or Config.BoxPlayers
+                local showName = isFriend and Config.ShowNameFriends or Config.ShowNamePlayers
+                local showHealth = isFriend and Config.ShowHealthFriends or Config.ShowHealthPlayers
+                local showDistance = isFriend and Config.ShowDistanceFriends or Config.ShowDistancePlayers
+
+                if distance <= Config.MaxDistance and phum.Health > 0 then
+                    local hl = char:FindFirstChild("SentinelHL")
+                    if highlight then
+                        if not hl then
+                            hl = Instance.new("Highlight", char)
+                            hl.Name = "SentinelHL"
+                        end
+                        hl.FillColor = color
+                        hl.FillTransparency = Config.HLFillTrans
+                        hl.OutlineTransparency = Config.HLOutlineTrans
+                    elseif hl then
+                        hl:Destroy()
+                    end
+
+                    if box then
+                        if not BoxLines[char] then
+                            BoxLines[char] = CreateBoxLines(color, Config.BoxThickness)
+                        end
+                        UpdateBox(BoxLines[char], char, color, Config.BoxThickness)
+                    else
+                        if BoxLines[char] then
+                            HideBox(BoxLines[char])
+                        end
+                    end
+
+                    UpdateInfo(char, category, color, showName, showHealth, showDistance, distance)
+                else
+                    if BoxLines[char] then
+                        HideBox(BoxLines[char])
+                    end
+                    if char:FindFirstChild("SentinelHL") then char.SentinelHL:Destroy() end
+                    DestroyInfo(char)
+                end
+            else
+                if char then
+                    if BoxLines[char] then
+                        DestroyBoxLines(BoxLines[char])
+                        BoxLines[char] = nil
+                    end
+                    if char:FindFirstChild("SentinelHL") then char.SentinelHL:Destroy() end
+                    DestroyInfo(char)
+                end
+            end
+        end
+    end
+
+    for i = #CachedMobs, 1, -1 do
+        local obj = CachedMobs[i]
+        if obj and obj.Parent then
+            if obj == myChar or obj == LocalPlayer.Character or obj.Name == LocalPlayer.Name or Players:GetPlayerFromCharacter(obj) then
+                if BoxLines[obj] then
+                    DestroyBoxLines(BoxLines[obj])
+                    BoxLines[obj] = nil
+                end
+                if obj:FindFirstChild("SentinelMobHL") then obj.SentinelMobHL:Destroy() end
+                DestroyInfo(obj)
+                table.remove(CachedMobs, i)
+                continue
+            end
+            local mhrp = obj:FindFirstChild("HumanoidRootPart")
+            local mhum = obj:FindFirstChildOfClass("Humanoid")
+            if mhrp and mhum then
+                local distance = (myHrp.Position - mhrp.Position).Magnitude
+                local isBossEntity = isBoss(obj)
+                local category = isBossEntity and "Boss" or "Mob"
+                local color = isBossEntity and Config.ColorBosses or Config.ColorMobs
+                local highlight = isBossEntity and Config.HighlightBosses or Config.HighlightMobs
+                local box = isBossEntity and Config.BoxBosses or Config.BoxMobs
+                local showName = isBossEntity and Config.ShowNameBosses or Config.ShowNameMobs
+                local showHealth = isBossEntity and Config.ShowHealthBosses or Config.ShowHealthMobs
+                local showDistance = isBossEntity and Config.ShowDistanceBosses or Config.ShowDistanceMobs
+
+                if distance <= Config.MaxDistance and mhum.Health > 0 then
+                    local hl = obj:FindFirstChild("SentinelMobHL")
+                    if highlight then
+                        if not hl then
+                            hl = Instance.new("Highlight", obj)
+                            hl.Name = "SentinelMobHL"
+                        end
+                        hl.FillColor = color
+                        hl.FillTransparency = Config.HLFillTrans
+                        hl.OutlineTransparency = Config.HLOutlineTrans
+                    elseif hl then
+                        hl:Destroy()
+                    end
+
+                    if box then
+                        if not BoxLines[obj] then
+                            BoxLines[obj] = CreateBoxLines(color, Config.BoxThickness)
+                        end
+                        UpdateBox(BoxLines[obj], obj, color, Config.BoxThickness)
+                    else
+                        if BoxLines[obj] then
+                            HideBox(BoxLines[obj])
+                        end
+                    end
+
+                    UpdateInfo(obj, category, color, showName, showHealth, showDistance, distance)
+                else
+                    if BoxLines[obj] then
+                        HideBox(BoxLines[obj])
+                    end
+                    if obj:FindFirstChild("SentinelMobHL") then obj.SentinelMobHL:Destroy() end
+                    DestroyInfo(obj)
+                end
+            end
+        else
+            if BoxLines[obj] then
+                DestroyBoxLines(BoxLines[obj])
+                BoxLines[obj] = nil
+            end
+            DestroyInfo(obj)
+            table.remove(CachedMobs, i)
         end
     end
 end)
@@ -3509,12 +3905,10 @@ function BuildUI()
 
         do
             local s = tab:Section({Title = "Noclip", Opened = true, Icon = "ghost"})
-            -- NOUVEAU NOCLIP : désactive CanCollide sur toutes les pièces du personnage
             s:Toggle({ Title = "Enable Noclip", Default = false, Callback = function(v)
                 Config.NoclipEnabled = v
                 if v then
                     if not noclipConnection then
-                        -- Lance une boucle qui s'exécute toutes les 0.21s
                         local function noclipLoop()
                             while Config.NoclipEnabled do
                                 local char = LocalPlayer.Character
@@ -3535,7 +3929,6 @@ function BuildUI()
                         task.cancel(noclipConnection)
                         noclipConnection = nil
                     end
-                    -- Restaurer les collisions
                     local char = LocalPlayer.Character
                     if char then
                         for _, part in pairs(char:GetDescendants()) do
@@ -3577,26 +3970,49 @@ function BuildUI()
         globalS:Slider({ Title = "Outline Transparency", Value = {Min = 0, Max = 100, Default = Config.HLOutlineTrans}, Rounding = 0, Enabled = true, Callback = function(v) Config.HLOutlineTrans = v end })
         globalS:Slider({ Title = "Highlight Transparency", Value = {Min = 0, Max = 100, Default = Config.HLFillTrans}, Rounding = 0, Enabled = true, Callback = function(v) Config.HLFillTrans = v end })
         globalS:Slider({ Title = "Max Distance", Value = {Min = 50, Max = 2000, Default = Config.MaxDistance}, Rounding = 0, Enabled = true, Callback = function(v) Config.MaxDistance = v end })
-
-        local bossS = tab:Section({Title = "Boss ESP Settings", Opened = true, Icon = "skull"})
-        bossS:Colorpicker({ Title = "Boss Color", Default = Config.ColorBosses, Callback = function(v) Config.ColorBosses = v end })
-        bossS:Toggle({ Title = "Highlight Bosses", Default = false, Callback = function(v) Config.HighlightBosses = v end })
-        bossS:Toggle({ Title = "Show Info", Default = false, Callback = function(v) Config.HealthBosses = v end })
-
-        local mobS = tab:Section({Title = "Mobs ESP Settings", Opened = true, Icon = "syringe"})
-        mobS:Colorpicker({ Title = "Mobs Color", Default = Config.ColorMobs, Callback = function(v) Config.ColorMobs = v end })
-        mobS:Toggle({ Title = "Highlight Mobs", Default = false, Callback = function(v) Config.HighlightMobs = v end })
-        mobS:Toggle({ Title = "Show Info", Default = false, Callback = function(v) Config.HealthMobs = v end })
+        globalS:Divider()
+        globalS:Slider({ Title = "Box Thickness", Value = {Min = 1, Max = 10, Default = Config.BoxThickness}, Rounding = 0, Enabled = true, Callback = function(v) Config.BoxThickness = v end })
+        globalS:Toggle({ Title = "Auto Thickness (distance based)", Default = Config.BoxAutoThickness, Callback = function(v) Config.BoxAutoThickness = v end })
 
         local playerS = tab:Section({Title = "Players ESP Settings", Opened = true, Icon = "user-round-plus"})
         playerS:Colorpicker({ Title = "Players Color", Default = Config.ColorPlayer, Callback = function(v) Config.ColorPlayer = v end })
+        playerS:Divider()
         playerS:Toggle({ Title = "Highlight Players", Default = false, Callback = function(v) Config.HighlightPlayer = v end })
-        playerS:Toggle({ Title = "Show Info", Default = false, Callback = function(v) Config.HealthPlayer = v end })
+        playerS:Toggle({ Title = "Box Players", Default = false, Callback = function(v) Config.BoxPlayers = v end })
+        playerS:Divider()
+        playerS:Toggle({ Title = "Show Players Name", Default = false, Callback = function(v) Config.ShowNamePlayers = v end })
+        playerS:Toggle({ Title = "Show Players Health", Default = false, Callback = function(v) Config.ShowHealthPlayers = v end })
+        playerS:Toggle({ Title = "Show Players Distance", Default = false, Callback = function(v) Config.ShowDistancePlayers = v end })
 
         local friendS = tab:Section({Title = "Friends ESP Settings", Opened = true, Icon = "user-round-check"})
         friendS:Colorpicker({ Title = "Friends Color", Default = Config.ColorFriends, Callback = function(v) Config.ColorFriends = v end })
+        friendS:Divider()
         friendS:Toggle({ Title = "Highlight Friends", Default = false, Callback = function(v) Config.HighlightFriends = v end })
-        friendS:Toggle({ Title = "Show Info", Default = false, Callback = function(v) Config.HealthFriends = v end })
+        friendS:Toggle({ Title = "Box Friends", Default = false, Callback = function(v) Config.BoxFriends = v end })
+        friendS:Divider()
+        friendS:Toggle({ Title = "Show Friends Name", Default = false, Callback = function(v) Config.ShowNameFriends = v end })
+        friendS:Toggle({ Title = "Show Friends Health", Default = false, Callback = function(v) Config.ShowHealthFriends = v end })
+        friendS:Toggle({ Title = "Show Friends Distance", Default = false, Callback = function(v) Config.ShowDistanceFriends = v end })
+
+        local mobS = tab:Section({Title = "Mobs ESP Settings", Opened = true, Icon = "syringe"})
+        mobS:Colorpicker({ Title = "Mobs Color", Default = Config.ColorMobs, Callback = function(v) Config.ColorMobs = v end })
+        mobS:Divider()
+        mobS:Toggle({ Title = "Highlight Mobs", Default = false, Callback = function(v) Config.HighlightMobs = v end })
+        mobS:Toggle({ Title = "Box Mobs", Default = false, Callback = function(v) Config.BoxMobs = v end })
+        mobS:Divider()
+        mobS:Toggle({ Title = "Show Mobs Name", Default = false, Callback = function(v) Config.ShowNameMobs = v end })
+        mobS:Toggle({ Title = "Show Mobs Health", Default = false, Callback = function(v) Config.ShowHealthMobs = v end })
+        mobS:Toggle({ Title = "Show Mobs Distance", Default = false, Callback = function(v) Config.ShowDistanceMobs = v end })
+
+        local bossS = tab:Section({Title = "Boss ESP Settings", Opened = true, Icon = "skull"})
+        bossS:Colorpicker({ Title = "Boss Color", Default = Config.ColorBosses, Callback = function(v) Config.ColorBosses = v end })
+        bossS:Divider()
+        bossS:Toggle({ Title = "Highlight Bosses", Default = false, Callback = function(v) Config.HighlightBosses = v end })
+        bossS:Toggle({ Title = "Box Bosses", Default = false, Callback = function(v) Config.BoxBosses = v end })
+        bossS:Divider()
+        bossS:Toggle({ Title = "Show Bosses Name", Default = false, Callback = function(v) Config.ShowNameBosses = v end })
+        bossS:Toggle({ Title = "Show Bosses Health", Default = false, Callback = function(v) Config.ShowHealthBosses = v end })
+        bossS:Toggle({ Title = "Show Bosses Distance", Default = false, Callback = function(v) Config.ShowDistanceBosses = v end })
     end
 
     do
@@ -4485,119 +4901,6 @@ RunService.RenderStepped:Connect(function()
         end
         if LocalPlayer.CameraMaxZoomDistance > 50 then
             LocalPlayer.CameraMaxZoomDistance = 50
-        end
-    end
-    local myChar = LocalPlayer.Character
-    local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
-    if not myHrp then return end
-
-    for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer then
-            local char = player.Character
-            local phrp = char and char:FindFirstChild("HumanoidRootPart")
-            local phum = char and char:FindFirstChildOfClass("Humanoid")
-            if phrp and phum then
-                local distance = (myHrp.Position - phrp.Position).Magnitude
-                local isFriend = LocalPlayer:IsFriendsWith(player.UserId)
-                local hlToggle = isFriend and Config.HighlightFriends or Config.HighlightPlayer
-                local hpToggle = isFriend and Config.HealthFriends or Config.HealthPlayer
-                local color = isFriend and Config.ColorFriends or Config.ColorPlayer
-                if distance <= Config.MaxDistance then
-                    local hl = char:FindFirstChild("SentinelHL")
-                    if hlToggle then
-                        if not hl then
-                            hl = Instance.new("Highlight", char)
-                            hl.Name = "SentinelHL"
-                        end
-                        hl.FillColor = color
-                        hl.FillTransparency = Config.HLFillTrans
-                        hl.OutlineTransparency = Config.HLOutlineTrans
-                    elseif hl then hl:Destroy() end
-                    local bgui = phrp:FindFirstChild("SentinelHP")
-                    if hpToggle then
-                        if not bgui then
-                            bgui = Instance.new("BillboardGui", phrp)
-                            bgui.Name = "SentinelHP"
-                            bgui.Size = UDim2.new(0, 150, 0, 30)
-                            bgui.AlwaysOnTop = true
-                            bgui.StudsOffset = Vector3.new(0, 3, 0)
-                            local text = Instance.new("TextLabel", bgui)
-                            text.Size = UDim2.new(1,0,1,0)
-                            text.BackgroundTransparency = 1
-                            text.TextStrokeTransparency = 0
-                            text.Font = Enum.Font.SourceSansBold
-                            text.TextSize = 13
-                        end
-                        if bgui and bgui.TextLabel then
-                            bgui.TextLabel.TextColor3 = color
-                            bgui.TextLabel.Text = string.format("%s [%d HP]", player.Name, math.round(phum.Health))
-                        end
-                    elseif bgui then bgui:Destroy() end
-                else
-                    if char:FindFirstChild("SentinelHL") then char.SentinelHL:Destroy() end
-                    if phrp:FindFirstChild("SentinelHP") then phrp.SentinelHP:Destroy() end
-                end
-            end
-        end
-    end
-
-    for i = #CachedMobs, 1, -1 do
-        local obj = CachedMobs[i]
-        if obj and obj.Parent then
-            if obj == myChar or obj == LocalPlayer.Character or obj.Name == LocalPlayer.Name or Players:GetPlayerFromCharacter(obj) then
-                if obj:FindFirstChild("SentinelMobHL") then obj.SentinelMobHL:Destroy() end
-                local badHrp = obj:FindFirstChild("HumanoidRootPart")
-                if badHrp and badHrp:FindFirstChild("SentinelMobHP") then badHrp.SentinelMobHP:Destroy() end
-                table.remove(CachedMobs, i)
-                continue
-            end
-            local mhrp = obj:FindFirstChild("HumanoidRootPart")
-            local mhum = obj:FindFirstChildOfClass("Humanoid")
-            if mhrp and mhum then
-                local distance = (myHrp.Position - mhrp.Position).Magnitude
-                if distance <= Config.MaxDistance and mhum.Health > 0 then
-                    local isBossEntity = isBoss(obj)
-                    local hlToggle = isBossEntity and Config.HighlightBosses or Config.HighlightMobs
-                    local hpToggle = isBossEntity and Config.HealthBosses or Config.HealthMobs
-                    local color = isBossEntity and Config.ColorBosses or Config.ColorMobs
-
-                    local hl = obj:FindFirstChild("SentinelMobHL")
-                    if hlToggle then
-                        if not hl then
-                            hl = Instance.new("Highlight", obj)
-                            hl.Name = "SentinelMobHL"
-                        end
-                        hl.FillColor = color
-                        hl.FillTransparency = Config.HLFillTrans
-                        hl.OutlineTransparency = Config.HLOutlineTrans
-                    elseif hl then hl:Destroy() end
-                    local bgui = mhrp:FindFirstChild("SentinelMobHP")
-                    if hpToggle then
-                        if not bgui then
-                            bgui = Instance.new("BillboardGui", mhrp)
-                            bgui.Name = "SentinelMobHP"
-                            bgui.Size = UDim2.new(0, 150, 0, 30)
-                            bgui.AlwaysOnTop = true
-                            bgui.StudsOffset = Vector3.new(0, 3, 0)
-                            local text = Instance.new("TextLabel", bgui)
-                            text.Size = UDim2.new(1,0,1,0)
-                            text.BackgroundTransparency = 1
-                            text.TextStrokeTransparency = 0
-                            text.Font = Enum.Font.SourceSansBold
-                            text.TextSize = 13
-                        end
-                        if bgui and bgui.TextLabel then
-                            bgui.TextLabel.TextColor3 = color
-                            bgui.TextLabel.Text = string.format("%s [%d HP]", obj.Name, math.round(mhum.Health))
-                        end
-                    elseif bgui then bgui:Destroy() end
-                else
-                    if obj:FindFirstChild("SentinelMobHL") then obj.SentinelMobHL:Destroy() end
-                    if mhrp and mhrp:FindFirstChild("SentinelMobHP") then mhrp.SentinelMobHP:Destroy() end
-                end
-            end
-        else
-            table.remove(CachedMobs, i)
         end
     end
 end)
