@@ -18,12 +18,10 @@ local HttpService = game:GetService("HttpService")
 local BadgeService = game:GetService("BadgeService")
 local ProximityPromptService = game:GetService("ProximityPromptService")
 local CollectionService = game:GetService("CollectionService")
+local SoundService = game:GetService("SoundService")
 
 local interfaceVisible = false
 local noclipConnection = nil
-
--- Liste des noms de boss (pour reconnaissance)
-local BOSS_NAMES = {"Chimera", "Dave", "Gilbert", "Mikhail", "SIN", "Cerberus"}
 
 function isPlayerCharacter(model)
     if not model or not model:IsA("Model") then return false end
@@ -79,14 +77,17 @@ Config = {
     HighlightPlayer = false,
     HighlightFriends = false,
     HighlightMobs = false,
+    HighlightBosses = false,
     HealthPlayer = false,
     HealthFriends = false,
     HealthMobs = false,
+    HealthBosses = false,
     TracerPlayer = false,
     TracerFriends = false,
     TracerMobs = false,
-    ColorPlayer = Color3.fromRGB(0, 150, 255),
-    ColorFriends = Color3.fromRGB(100, 255, 100),
+    TracerBosses = false,
+    ColorPlayer = Color3.fromRGB(0, 255, 0),
+    ColorFriends = Color3.fromRGB(173, 216, 230),
     ColorMobs = Color3.fromRGB(255, 165, 0),
     ColorBosses = Color3.fromRGB(255, 0, 0),
     MaxDistance = 1000,
@@ -148,14 +149,30 @@ Config = {
     NightStalkerInfAmmo = false,
     AutoReload = false,
     FastDocumentFarm = false,
-    EnableBossESP = false,
-    EnableMobsESP = false,
-    EnablePlayersESP = false,
-    EnableAllBosses = false,
-    EnableAllMobs = false,
-    SelectedBosses = {},
-    SelectedMobs = {},
+    WindowTransparency = 0,
+    WindowTheme = "Amnethy",
+    WindowBackground = "",
+    NotificationSound = "",
 }
+
+local BOSS_NAMES = {
+    "Gilbert",
+    "Chimera",
+    "Mikhail",
+    "Sin",
+    "SIN",
+    "Dave"
+}
+
+local function isBoss(model)
+    if not model or not model:IsA("Model") then return false end
+    for _, name in ipairs(BOSS_NAMES) do
+        if model.Name:find(name) then
+            return true
+        end
+    end
+    return false
+end
 
 ValidCombatTools = {
     ["MPV-9"] = true, ["Mossberg 590A1"] = true, ["Beanbag Shotgun"] = true, ["VGS-9"] = true,
@@ -205,7 +222,6 @@ CooldownCounter = 0
 CooldownData = { Bash = nil, Kick = nil }
 ActiveTweens = {}
 CachedMobs = {}
-tracerCache = {}
 OrigAmbient = Lighting.Ambient
 OrigOutdoorAmbient = Lighting.OutdoorAmbient
 OrigBrightness = Lighting.Brightness
@@ -2021,59 +2037,61 @@ if ClientEvents and ClientEvents:FindFirstChild("client") and ClientEvents.clien
     end)
 end
 
--- ============================================================
--- NOUVELLE GESTION DU CACHE DES MOBS (inclut désormais les boss)
--- ============================================================
-local CharactersFolder = workspace:FindFirstChild("Characters")
-
-function updateMobCache()
-    if not CharactersFolder then
-        CachedMobs = {}
+function checkMob(obj)
+    local charactersFolder = workspace:FindFirstChild("Characters")
+    if charactersFolder and not obj:IsDescendantOf(charactersFolder) then
         return
     end
-    local newMobs = {}
-    for _, child in ipairs(CharactersFolder:GetChildren()) do
-        if child:IsA("Model") and child:FindFirstChildOfClass("Humanoid") then
-            -- Exclure les joueurs et le personnage local
-            if not Players:GetPlayerFromCharacter(child) and child ~= LocalPlayer.Character then
-                -- On inclut TOUS les modèles (mobs et bosses)
-                table.insert(newMobs, child)
-            end
+
+    if obj:IsA("Model") and obj:FindFirstChild("HumanoidRootPart") and obj:FindFirstChildOfClass("Humanoid") then
+        if obj ~= LocalPlayer.Character and obj.Name ~= LocalPlayer.Name and not Players:GetPlayerFromCharacter(obj) and not table.find(CachedMobs, obj) then
+            table.insert(CachedMobs, obj)
+            local mobId = obj:GetDebugId()
+            obj.AncestryChanged:Connect(function(child, parent)
+                if parent == nil then
+                    for i, m in ipairs(CachedMobs) do
+                        if m == obj then
+                            table.remove(CachedMobs, i)
+                            break
+                        end
+                    end
+                end
+            end)
         end
     end
-    CachedMobs = newMobs
 end
 
--- Mise à jour initiale
-updateMobCache()
-
--- Surveillance du dossier Characters
-if CharactersFolder then
-    CharactersFolder.ChildAdded:Connect(function(child)
-        task.wait(0.3) -- laisser le temps au modèle de se charger
-        updateMobCache()
-    end)
-    CharactersFolder.ChildRemoved:Connect(function()
-        updateMobCache()
-    end)
-end
-
--- ============================================================
-
-function getTracer(id)
-    if not Drawing then return nil end
-    if not tracerCache[id] then
-        local line = Drawing.new("Line")
-        line.Thickness = 1.5
-        line.Transparency = 1
-        tracerCache[id] = line
+task.spawn(function()
+    local charactersFolder = workspace:FindFirstChild("Characters")
+    local descendantsToScan = charactersFolder and charactersFolder:GetDescendants() or workspace:GetDescendants()
+    for i, obj in ipairs(descendantsToScan) do
+        checkMob(obj)
+        if i % 200 == 0 then task.wait() end
     end
-    return tracerCache[id]
-end
+end)
 
-Players.PlayerRemoving:Connect(function(player)
-    local line = tracerCache[player.UserId]
-    if line then line.Visible = false end
+workspace.DescendantAdded:Connect(function(descendant)
+    if descendant:IsA("Model") then
+        task.wait(0.3)
+        checkMob(descendant)
+    end
+end)
+
+UserInputService.JumpRequest:Connect(function()
+    local character = LocalPlayer.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    local hrp = character and character:FindFirstChild("HumanoidRootPart")
+    if not hrp or not humanoid then return end
+    local actualJumpPower = Config.JumpPowerEnabled and Config.JumpPowerValue or 50
+    if Config.InfiniteJump then
+        hrp.Velocity = Vector3.new(hrp.Velocity.X, actualJumpPower, hrp.Velocity.Z)
+        humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+    end
+    if Config.JumpBypassActive and not Config.InfiniteJump then
+        if humanoid.FloorMaterial ~= Enum.Material.Air then
+            hrp.Velocity = Vector3.new(hrp.Velocity.X, actualJumpPower, hrp.Velocity.Z)
+        end
+    end
 end)
 
 RunService.RenderStepped:Connect(function(dt)
@@ -2175,188 +2193,6 @@ RunService.RenderStepped:Connect(function(dt)
             if hrp and hrp.Anchored then
                 hrp.Anchored = false
             end
-        end
-    end
-
-    -- ESP Rendering
-    local myChar = LocalPlayer.Character
-    local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
-    if not myHrp then return end
-
-    -- Players ESP
-    for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer then
-            local char = player.Character
-            local phrp = char and char:FindFirstChild("HumanoidRootPart")
-            local phum = char and char:FindFirstChildOfClass("Humanoid")
-            if phrp and phum then
-                local distance = (myHrp.Position - phrp.Position).Magnitude
-                if Config.EnablePlayersESP and distance <= Config.MaxDistance then
-                    local hl = char:FindFirstChild("SentinelHL")
-                    if not hl then
-                        hl = Instance.new("Highlight", char)
-                        hl.Name = "SentinelHL"
-                    end
-                    hl.FillColor = Config.ColorPlayer
-                    hl.FillTransparency = Config.HLFillTrans
-                    hl.OutlineTransparency = Config.HLOutlineTrans
-
-                    if Config.HealthPlayer then
-                        local bgui = phrp:FindFirstChild("SentinelHP")
-                        if not bgui then
-                            bgui = Instance.new("BillboardGui", phrp)
-                            bgui.Name = "SentinelHP"
-                            bgui.Size = UDim2.new(0, 150, 0, 30)
-                            bgui.AlwaysOnTop = true
-                            bgui.StudsOffset = Vector3.new(0, 3, 0)
-                            local text = Instance.new("TextLabel", bgui)
-                            text.Size = UDim2.new(1,0,1,0)
-                            text.BackgroundTransparency = 1
-                            text.TextStrokeTransparency = 0
-                            text.Font = Enum.Font.SourceSansBold
-                            text.TextSize = 13
-                        end
-                        if bgui and bgui.TextLabel then
-                            bgui.TextLabel.TextColor3 = Config.ColorPlayer
-                            bgui.TextLabel.Text = string.format("%s [%d HP]", player.Name, math.round(phum.Health))
-                        end
-                    else
-                        local bgui = phrp:FindFirstChild("SentinelHP")
-                        if bgui then bgui:Destroy() end
-                    end
-
-                    if Config.TracerPlayer then
-                        local line = getTracer(player.UserId)
-                        if line then
-                            local vector, onScreen = Camera:WorldToViewportPoint(phrp.Position)
-                            if onScreen then
-                                line.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
-                                line.To = Vector2.new(vector.X, vector.Y)
-                                line.Color = Config.ColorPlayer
-                                line.Visible = true
-                            else line.Visible = false end
-                        end
-                    else
-                        local line = tracerCache[player.UserId]
-                        if line then line.Visible = false end
-                    end
-                else
-                    if char:FindFirstChild("SentinelHL") then char.SentinelHL:Destroy() end
-                    if phrp:FindFirstChild("SentinelHP") then phrp.SentinelHP:Destroy() end
-                    local line = tracerCache[player.UserId]
-                    if line then line.Visible = false end
-                end
-            end
-        end
-    end
-
-    -- Mobs & Bosses (maintenant CachedMobs contient les deux)
-    for i = #CachedMobs, 1, -1 do
-        local obj = CachedMobs[i]
-        if obj and obj.Parent then
-            local mhrp = obj:FindFirstChild("HumanoidRootPart")
-            local mhum = obj:FindFirstChildOfClass("Humanoid")
-            if mhrp and mhum then
-                local distance = (myHrp.Position - mhrp.Position).Magnitude
-                local mobId = obj:GetDebugId()
-                local isBoss = false
-                for _, bname in ipairs(BOSS_NAMES) do
-                    if obj.Name == bname then
-                        isBoss = true
-                        break
-                    end
-                end
-
-                local enable = false
-                local color = Config.ColorMobs
-                if isBoss then
-                    if Config.EnableBossESP then
-                        if Config.EnableAllBosses then
-                            enable = true
-                        elseif #Config.SelectedBosses > 0 then
-                            for _, selected in ipairs(Config.SelectedBosses) do
-                                if selected == obj.Name then
-                                    enable = true
-                                    break
-                                end
-                            end
-                        end
-                    end
-                    color = Config.ColorBosses
-                else
-                    if Config.EnableMobsESP then
-                        if Config.EnableAllMobs then
-                            enable = true
-                        elseif #Config.SelectedMobs > 0 then
-                            for _, selected in ipairs(Config.SelectedMobs) do
-                                if selected == obj.Name then
-                                    enable = true
-                                    break
-                                end
-                            end
-                        end
-                    end
-                    color = Config.ColorMobs
-                end
-
-                if enable and distance <= Config.MaxDistance and mhum.Health > 0 then
-                    local hl = obj:FindFirstChild("SentinelMobHL")
-                    if not hl then
-                        hl = Instance.new("Highlight", obj)
-                        hl.Name = "SentinelMobHL"
-                    end
-                    hl.FillColor = color
-                    hl.FillTransparency = Config.HLFillTrans
-                    hl.OutlineTransparency = Config.HLOutlineTrans
-
-                    if Config.HealthMobs then
-                        local bgui = mhrp:FindFirstChild("SentinelMobHP")
-                        if not bgui then
-                            bgui = Instance.new("BillboardGui", mhrp)
-                            bgui.Name = "SentinelMobHP"
-                            bgui.Size = UDim2.new(0, 150, 0, 30)
-                            bgui.AlwaysOnTop = true
-                            bgui.StudsOffset = Vector3.new(0, 3, 0)
-                            local text = Instance.new("TextLabel", bgui)
-                            text.Size = UDim2.new(1,0,1,0)
-                            text.BackgroundTransparency = 1
-                            text.TextStrokeTransparency = 0
-                            text.Font = Enum.Font.SourceSansBold
-                            text.TextSize = 13
-                        end
-                        if bgui and bgui.TextLabel then
-                            bgui.TextLabel.TextColor3 = color
-                            bgui.TextLabel.Text = string.format("%s [%d HP]", obj.Name, math.round(mhum.Health))
-                        end
-                    else
-                        local bgui = mhrp:FindFirstChild("SentinelMobHP")
-                        if bgui then bgui:Destroy() end
-                    end
-
-                    if Config.TracerMobs then
-                        local line = getTracer(mobId)
-                        if line then
-                            local vector, onScreen = Camera:WorldToViewportPoint(mhrp.Position)
-                            if onScreen then
-                                line.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
-                                line.To = Vector2.new(vector.X, vector.Y)
-                                line.Color = color
-                                line.Visible = true
-                            else line.Visible = false end
-                        end
-                    else
-                        local line = tracerCache[mobId]
-                        if line then line.Visible = false end
-                    end
-                else
-                    if obj:FindFirstChild("SentinelMobHL") then obj.SentinelMobHL:Destroy() end
-                    if mhrp and mhrp:FindFirstChild("SentinelMobHP") then mhrp.SentinelMobHP:Destroy() end
-                    local line = tracerCache[mobId]
-                    if line then line.Visible = false end
-                end
-            end
-        else
-            table.remove(CachedMobs, i)
         end
     end
 end)
@@ -3253,6 +3089,37 @@ function stopElsherLoop()
     end
 end
 
+local function playNotificationSound()
+    local soundFile = "SentinelNotifSound.mp3"
+    local soundUrl = "https://github.com/x4tmqq/Sentinel-Script/raw/refs/heads/main/SentinelNotifSound.mp3"
+    
+    local urlToUse = Config.NotificationSound ~= "" and Config.NotificationSound or soundUrl
+    local fileToUse = Config.NotificationSound ~= "" and "custom_notif_sound.mp3" or soundFile
+    
+    pcall(function()
+        if not isfile(fileToUse) then
+            local response = request({
+                Url = urlToUse,
+                Method = "GET"
+            })
+            if response and response.StatusCode == 200 then
+                writefile(fileToUse, response.Body)
+            else
+                return
+            end
+        end
+        
+        local sound = Instance.new("Sound")
+        sound.SoundId = getcustomasset(fileToUse)
+        sound.Volume = 1
+        sound.Parent = SoundService
+        sound:Play()
+        task.delay(sound.TimeLength + 0.5, function()
+            sound:Destroy()
+        end)
+    end)
+end
+
 WindUI = nil
 loadSuccess = pcall(function()
     WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
@@ -3274,6 +3141,13 @@ if not WindUI.Creator or not WindUI.CreateWindow or not WindUI.SetTheme or not W
         Duration = 15
     })
     return
+end
+
+local originalNotify = WindUI.Notify
+WindUI.Notify = function(...)
+    local result = originalNotify(...)
+    playNotificationSound()
+    return result
 end
 
 pcall(function()
@@ -3336,14 +3210,14 @@ function BuildUI()
     mainWindow:Divider()
     local espTab = mainWindow:Tab({ Title = "ESP", Icon = "eye" })
     local combatTab = mainWindow:Tab({ Title = "Combat", Icon = "crosshair" })
-    local worldTab = mainWindow:Tab({ Title = "World", Icon = "globe" })
+    local worldTab = mainWindow:Tab({ Title = "World", Icon = "earth" })
     mainWindow:Divider()
     local animTab = mainWindow:Tab({ Title = "Animations", Icon = "clapperboard" })
     local questsTab = mainWindow:Tab({ Title = "Quests", Icon = "scroll" })
     local utilitiesTab = mainWindow:Tab({ Title = "Utilities", Icon = "wrench" })
     mainWindow:Divider()
-    local aboutTab = mainWindow:Tab({ Title = "About", Icon = "info" })
-    local othersTab = mainWindow:Tab({ Title = "Others Scripts", Icon = "code" })
+    local settingsTab = mainWindow:Tab({ Title = "Settings", Icon = "settings", Locked = true })
+    local configTab = mainWindow:Tab({ Title = "Configs", Icon = "save", Locked = true })
 
     Tabs = {
         Main = mainTab,
@@ -3354,8 +3228,8 @@ function BuildUI()
         Animations = animTab,
         Quests = questsTab,
         Utilities = utilitiesTab,
-        About = aboutTab,
-        Others = othersTab,
+        Settings = settingsTab,
+        Config = configTab
     }
 
     do
@@ -3635,30 +3509,36 @@ function BuildUI()
 
         do
             local s = tab:Section({Title = "Noclip", Opened = true, Icon = "ghost"})
+            -- NOUVEAU NOCLIP : désactive CanCollide sur toutes les pièces du personnage
             s:Toggle({ Title = "Enable Noclip", Default = false, Callback = function(v)
                 Config.NoclipEnabled = v
                 if v then
                     if not noclipConnection then
-                        noclipConnection = RunService.Heartbeat:Connect(function()
-                            if not Config.NoclipEnabled then return end
-                            local char = LocalPlayer.Character
-                            if char then
-                                for _, part in ipairs(char:GetDescendants()) do
-                                    if part:IsA("BasePart") then
-                                        part.CanCollide = false
+                        -- Lance une boucle qui s'exécute toutes les 0.21s
+                        local function noclipLoop()
+                            while Config.NoclipEnabled do
+                                local char = LocalPlayer.Character
+                                if char then
+                                    for _, part in pairs(char:GetDescendants()) do
+                                        if part:IsA("BasePart") and part.CanCollide then
+                                            part.CanCollide = false
+                                        end
                                     end
                                 end
+                                task.wait(0.21)
                             end
-                        end)
+                        end
+                        noclipConnection = task.spawn(noclipLoop)
                     end
                 else
                     if noclipConnection then
-                        noclipConnection:Disconnect()
+                        task.cancel(noclipConnection)
                         noclipConnection = nil
                     end
+                    -- Restaurer les collisions
                     local char = LocalPlayer.Character
                     if char then
-                        for _, part in ipairs(char:GetDescendants()) do
+                        for _, part in pairs(char:GetDescendants()) do
                             if part:IsA("BasePart") then
                                 part.CanCollide = true
                             end
@@ -3693,94 +3573,30 @@ function BuildUI()
     do
         local tab = Tabs.ESP
 
-        do
-            local s = tab:Section({Title = "ESP Settings", Opened = true, Icon = "cog"})
-            s:Colorpicker({ Title = "Bosses ESP Colors", Default = Config.ColorBosses, Callback = function(v) Config.ColorBosses = v end })
-            s:Colorpicker({ Title = "Mobs ESP Colors", Default = Config.ColorMobs, Callback = function(v) Config.ColorMobs = v end })
-            s:Colorpicker({ Title = "Player ESP Colors", Default = Config.ColorPlayer, Callback = function(v) Config.ColorPlayer = v end })
-            s:Divider()
-            s:Slider({ Title = "ESP Max Distance", Value = {Min = 0, Max = 1000, Default = 250}, Rounding = 0, Enabled = true, Callback = function(v) Config.MaxDistance = v end })
-            s:Slider({ Title = "ESP Outline Transparency", Value = {Min = 0, Max = 100, Default = 70}, Rounding = 0, Enabled = true, Callback = function(v) Config.HLOutlineTrans = v / 100 end })
-            s:Slider({ Title = "ESP Highlight Transparency", Value = {Min = 0, Max = 100, Default = 40}, Rounding = 0, Enabled = true, Callback = function(v) Config.HLFillTrans = v / 100 end })
-            s:Divider()
-            local function getBosses()
-                local chars = workspace:FindFirstChild("Characters")
-                if not chars then return {} end
-                local bossNames = {}
-                for _, child in ipairs(chars:GetChildren()) do
-                    if child:IsA("Model") and child:FindFirstChildOfClass("Humanoid") then
-                        for _, bossName in ipairs(BOSS_NAMES) do
-                            if child.Name == bossName then
-                                table.insert(bossNames, child.Name)
-                                break
-                            end
-                        end
-                    end
-                end
-                return bossNames
-            end
-            local function getMobs()
-                local chars = workspace:FindFirstChild("Characters")
-                if not chars then return {} end
-                local mobNames = {}
-                for _, child in ipairs(chars:GetChildren()) do
-                    if child:IsA("Model") and child:FindFirstChildOfClass("Humanoid") then
-                        if not Players:GetPlayerFromCharacter(child) then
-                            local isBoss = false
-                            for _, bossName in ipairs(BOSS_NAMES) do
-                                if child.Name == bossName then
-                                    isBoss = true
-                                    break
-                                end
-                            end
-                            if not isBoss then
-                                table.insert(mobNames, child.Name)
-                            end
-                        end
-                    end
-                end
-                return mobNames
-            end
-            local bossOptions = getBosses()
-            local mobOptions = getMobs()
-            s:Dropdown({
-                Title = "Pick Bosses To Highlight",
-                Values = bossOptions,
-                Default = {},
-                Multi = true,
-                AllowNone = true,
-                Callback = function(selected) Config.SelectedBosses = selected end
-            })
-            s:Dropdown({
-                Title = "Pick Mobs To Highlight",
-                Values = mobOptions,
-                Default = {},
-                Multi = true,
-                AllowNone = true,
-                Callback = function(selected) Config.SelectedMobs = selected end
-            })
-        end
+        local globalS = tab:Section({Title = "Global ESP Settings", Opened = true, Icon = "globe"})
+        globalS:Slider({ Title = "Outline Transparency", Value = {Min = 0, Max = 100, Default = Config.HLOutlineTrans}, Rounding = 0, Enabled = true, Callback = function(v) Config.HLOutlineTrans = v end })
+        globalS:Slider({ Title = "Highlight Transparency", Value = {Min = 0, Max = 100, Default = Config.HLFillTrans}, Rounding = 0, Enabled = true, Callback = function(v) Config.HLFillTrans = v end })
+        globalS:Slider({ Title = "Max Distance", Value = {Min = 50, Max = 2000, Default = Config.MaxDistance}, Rounding = 0, Enabled = true, Callback = function(v) Config.MaxDistance = v end })
 
-        -- Section Boss ESP : toggle "Enable All" en premier, puis Divider
-        do
-            local s = tab:Section({Title = "Boss ESP", Opened = true, Icon = "skull"})
-            s:Toggle({ Title = "Enable All Bosses", Default = false, Callback = function(v) Config.EnableAllBosses = v end })
-            s:Divider()
-            s:Toggle({ Title = "Enable Bosses ESP", Default = false, Callback = function(v) Config.EnableBossESP = v end })
-        end
+        local bossS = tab:Section({Title = "Boss ESP Settings", Opened = true, Icon = "skull"})
+        bossS:Colorpicker({ Title = "Boss Color", Default = Config.ColorBosses, Callback = function(v) Config.ColorBosses = v end })
+        bossS:Toggle({ Title = "Highlight Bosses", Default = false, Callback = function(v) Config.HighlightBosses = v end })
+        bossS:Toggle({ Title = "Show Info", Default = false, Callback = function(v) Config.HealthBosses = v end })
 
-        -- Section Mobs ESP : toggle "Enable All" en premier, puis Divider
-        do
-            local s = tab:Section({Title = "Mobs ESP", Opened = true, Icon = "syringe"})
-            s:Toggle({ Title = "Enable All Mobs", Default = false, Callback = function(v) Config.EnableAllMobs = v end })
-            s:Divider()
-            s:Toggle({ Title = "Enable Mobs ESP", Default = false, Callback = function(v) Config.EnableMobsESP = v end })
-        end
+        local mobS = tab:Section({Title = "Mobs ESP Settings", Opened = true, Icon = "syringe"})
+        mobS:Colorpicker({ Title = "Mobs Color", Default = Config.ColorMobs, Callback = function(v) Config.ColorMobs = v end })
+        mobS:Toggle({ Title = "Highlight Mobs", Default = false, Callback = function(v) Config.HighlightMobs = v end })
+        mobS:Toggle({ Title = "Show Info", Default = false, Callback = function(v) Config.HealthMobs = v end })
 
-        do
-            local s = tab:Section({Title = "Player ESP", Opened = true, Icon = "user-round-plus"})
-            s:Toggle({ Title = "Enable Players ESP", Default = false, Callback = function(v) Config.EnablePlayersESP = v end })
-        end
+        local playerS = tab:Section({Title = "Players ESP Settings", Opened = true, Icon = "user-round-plus"})
+        playerS:Colorpicker({ Title = "Players Color", Default = Config.ColorPlayer, Callback = function(v) Config.ColorPlayer = v end })
+        playerS:Toggle({ Title = "Highlight Players", Default = false, Callback = function(v) Config.HighlightPlayer = v end })
+        playerS:Toggle({ Title = "Show Info", Default = false, Callback = function(v) Config.HealthPlayer = v end })
+
+        local friendS = tab:Section({Title = "Friends ESP Settings", Opened = true, Icon = "user-round-check"})
+        friendS:Colorpicker({ Title = "Friends Color", Default = Config.ColorFriends, Callback = function(v) Config.ColorFriends = v end })
+        friendS:Toggle({ Title = "Highlight Friends", Default = false, Callback = function(v) Config.HighlightFriends = v end })
+        friendS:Toggle({ Title = "Show Info", Default = false, Callback = function(v) Config.HealthFriends = v end })
     end
 
     do
@@ -4431,159 +4247,8 @@ function BuildUI()
     end
 
     do
-        local tab = Tabs.About
-        local s = tab:Section({Title = "Links", Opened = true, Icon = "link"})
-        
-        s:Button({ Title = "Copy Discord Server Link", Callback = function()
-            local link = "https://discord.gg/vTE8NQPsUb"
-            if setclipboard then setclipboard(link)
-            else pcall(function() local tb = Instance.new("TextBox"); tb.Text = link; tb:CaptureFocus(); tb:ReleaseFocus(); tb:Destroy() end) end
-            pcall(function() if WindUI then WindUI:Notify({ Title = "Discord", Content = "Discord server link copied!", Duration = 3 }) end end)
-        end })
-        
-        s:Button({ Title = "Copy YouTube Channel Link", Callback = function()
-            local link = "https://www.youtube.com/@SentinelScript-aaa"
-            if setclipboard then setclipboard(link)
-            else pcall(function() local tb = Instance.new("TextBox"); tb.Text = link; tb:CaptureFocus(); tb:ReleaseFocus(); tb:Destroy() end) end
-            pcall(function() if WindUI then WindUI:Notify({ Title = "YouTube", Content = "YouTube link copied!", Duration = 3 }) end end)
-        end })
-        
-        s:Button({ Title = "Copy TikTok Profile Link", Callback = function()
-            local link = "https://www.tiktok.com/@sentinel.script"
-            if setclipboard then setclipboard(link)
-            else pcall(function() local tb = Instance.new("TextBox"); tb.Text = link; tb:CaptureFocus(); tb:ReleaseFocus(); tb:Destroy() end) end
-            pcall(function() if WindUI then WindUI:Notify({ Title = "TikTok", Content = "TikTok profile link copied!", Duration = 3 }) end end)
-        end })
-        
-        s:Divider()
-        
-        s:Button({ Title = "Copy Sentinel Script Link", Callback = function()
-            local link = "https://x4tmqq.github.io/Sentinel-Script/"
-            if setclipboard then setclipboard(link)
-            else pcall(function() local tb = Instance.new("TextBox"); tb.Text = link; tb:CaptureFocus(); tb:ReleaseFocus(); tb:Destroy() end) end
-            pcall(function() if WindUI then WindUI:Notify({ Title = "Sentinel Script", Content = "Link copied!", Duration = 3 }) end end)
-        end })
-        
-        s:Button({ Title = "Copy Rscripts.net Link", Callback = function()
-            local link = "https://rscripts.net/script/examination-oBz7"
-            if setclipboard then setclipboard(link)
-            else pcall(function() local tb = Instance.new("TextBox"); tb.Text = link; tb:CaptureFocus(); tb:ReleaseFocus(); tb:Destroy() end) end
-            pcall(function() if WindUI then WindUI:Notify({ Title = "Rscripts.net", Content = "Rscript Link copied", Duration = 3 }) end end)
-        end })
-    end
+        local tab = Tabs.Settings
 
-    do
-        local tab = Tabs.Others
-
-        do
-            local s = tab:Section({Title = "SK22T", Opened = true, Icon = "code"})
-            s:Paragraph({
-                Title = "Information",
-                Desc = "Old script, some stuffs might not work. Require a key, paste your key in the textbox.",
-                Locked = true,
-            })
-            s:Space()
-
-            local keyInput = s:Input({
-                Title = "Key",
-                Default = "",
-                Placeholder = "Enter SK22T key here",
-                Callback = function(value)
-                end
-            })
-
-            s:Button({
-                Title = "Execute SK22T's script",
-                Callback = function()
-                    local key = keyInput.Value or ""
-                    if key == "" then
-                        pcall(function()
-                            if WindUI then WindUI:Notify({ Title = "SK22T", Content = "Please enter your key first.", Duration = 3, Icon = "alert-circle" }) end
-                        end)
-                        return
-                    end
-                    local scriptCode = string.format([[
-                        script_key = "%s"
-                        loadstring(game:HttpGet("https://api.luarmor.net/files/v3/loaders/6e4126af36402ce33dc9f17d53101153.lua"))()
-                    ]], key)
-                    local success, err = pcall(function()
-                        loadstring(scriptCode)()
-                    end)
-                    if not success then
-                        pcall(function()
-                            if WindUI then WindUI:Notify({ Title = "SK22T", Content = "Error: " .. tostring(err), Duration = 5, Icon = "x" }) end
-                        end)
-                    else
-                        pcall(function()
-                            if WindUI then WindUI:Notify({ Title = "SK22T", Content = "Script executed!", Duration = 3, Icon = "check" }) end
-                        end)
-                    end
-                end
-            })
-
-            s:Button({
-                Title = "Copy Key link",
-                Callback = function()
-                    local link = "https://ads.luarmor.net/get_key?for=Sk22t_Key-FekHQfHCPeev"
-                    if setclipboard then
-                        setclipboard(link)
-                    else
-                        pcall(function()
-                            local tb = Instance.new("TextBox")
-                            tb.Text = link
-                            tb:CaptureFocus()
-                            tb:ReleaseFocus()
-                            tb:Destroy()
-                        end)
-                    end
-                    pcall(function()
-                        if WindUI then WindUI:Notify({ Title = "SK22T", Content = "Key link copied!", Duration = 3, Icon = "check" }) end
-                    end)
-                end
-            })
-        end
-
-        do
-            local s = tab:Section({Title = "Ramirez's Bot Behavior", Opened = true, Icon = "bot"})
-            s:Button({
-                Title = "Execute Ramirez's Bot Behavior",
-                Callback = function()
-                    local success, err = pcall(function()
-                        loadstring(game:HttpGet("https://raw.githubusercontent.com/botgrant1/Roblox-Examination---Ramirez-BOT-Behavior/refs/heads/main/main.lua"))()
-                    end)
-                    if not success then
-                        pcall(function()
-                            if WindUI then WindUI:Notify({ Title = "Ramirez's Bot Behavior", Content = "Error: " .. tostring(err), Duration = 5, Icon = "x" }) end
-                        end)
-                    else
-                        pcall(function()
-                            if WindUI then WindUI:Notify({ Title = "Ramirez's Bot Behavior", Content = "Script executed!", Duration = 3, Icon = "check" }) end
-                        end)
-                    end
-                end
-            })
-        end
-
-        do
-            local s = tab:Section({Title = "Hapiness Hub", Opened = true, Icon = "smile"})
-            s:Button({
-                Title = "Execute Hapiness Hub",
-                Callback = function()
-                    local success, err = pcall(function()
-                        loadstring(game:HttpGet("https://raw.githubusercontent.com/HappinessAlive/Happiness/refs/heads/indev/examination"))()
-                    end)
-                    if not success then
-                        pcall(function()
-                            if WindUI then WindUI:Notify({ Title = "Hapiness Hub", Content = "Error: " .. tostring(err), Duration = 5, Icon = "x" }) end
-                        end)
-                    else
-                        pcall(function()
-                            if WindUI then WindUI:Notify({ Title = "Hapiness Hub", Content = "Script executed!", Duration = 3, Icon = "check" }) end
-                        end)
-                    end
-                end
-            })
-        end
     end
 end
 
@@ -4618,8 +4283,14 @@ function initializeUI()
     })
 
     pcall(function()
+        if mainWindow.Background then
+            mainWindow.Background.ImageTransparency = Config.WindowTransparency / 100
+        end
+    end)
+
+    pcall(function()
         mainWindow:Tag({
-            Title = "v13.50.00",
+            Title = "v13.00.00",
             Icon = "shield-check",
             Color = Color3.fromHex("#30ff6a"),
             Radius = 13
@@ -4645,6 +4316,12 @@ function initializeUI()
         Enabled = true,
         Draggable = true,
     })
+
+    if Config.WindowBackground ~= "" then
+        pcall(function()
+            mainWindow:SetBackgroundImage(Config.WindowBackground)
+        end)
+    end
 
     BuildUI()
 
@@ -4790,6 +4467,137 @@ task.spawn(function()
             end
         else
             for obj, hl in pairs(GeneratorHighlights) do hl:Destroy(); GeneratorHighlights[obj] = nil end
+        end
+    end
+end)
+
+RunService.RenderStepped:Connect(function()
+    if Config.UnlockThirdPerson then
+        if LocalPlayer.CameraMode ~= Enum.CameraMode.Classic then
+            LocalPlayer.CameraMode = Enum.CameraMode.Classic
+        end
+        if LocalPlayer.CameraMaxZoomDistance < 999 then
+            LocalPlayer.CameraMaxZoomDistance = 999
+        end
+    else
+        if LocalPlayer.CameraMode ~= Enum.CameraMode.LockFirstPerson then
+            LocalPlayer.CameraMode = Enum.CameraMode.LockFirstPerson
+        end
+        if LocalPlayer.CameraMaxZoomDistance > 50 then
+            LocalPlayer.CameraMaxZoomDistance = 50
+        end
+    end
+    local myChar = LocalPlayer.Character
+    local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    if not myHrp then return end
+
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local char = player.Character
+            local phrp = char and char:FindFirstChild("HumanoidRootPart")
+            local phum = char and char:FindFirstChildOfClass("Humanoid")
+            if phrp and phum then
+                local distance = (myHrp.Position - phrp.Position).Magnitude
+                local isFriend = LocalPlayer:IsFriendsWith(player.UserId)
+                local hlToggle = isFriend and Config.HighlightFriends or Config.HighlightPlayer
+                local hpToggle = isFriend and Config.HealthFriends or Config.HealthPlayer
+                local color = isFriend and Config.ColorFriends or Config.ColorPlayer
+                if distance <= Config.MaxDistance then
+                    local hl = char:FindFirstChild("SentinelHL")
+                    if hlToggle then
+                        if not hl then
+                            hl = Instance.new("Highlight", char)
+                            hl.Name = "SentinelHL"
+                        end
+                        hl.FillColor = color
+                        hl.FillTransparency = Config.HLFillTrans
+                        hl.OutlineTransparency = Config.HLOutlineTrans
+                    elseif hl then hl:Destroy() end
+                    local bgui = phrp:FindFirstChild("SentinelHP")
+                    if hpToggle then
+                        if not bgui then
+                            bgui = Instance.new("BillboardGui", phrp)
+                            bgui.Name = "SentinelHP"
+                            bgui.Size = UDim2.new(0, 150, 0, 30)
+                            bgui.AlwaysOnTop = true
+                            bgui.StudsOffset = Vector3.new(0, 3, 0)
+                            local text = Instance.new("TextLabel", bgui)
+                            text.Size = UDim2.new(1,0,1,0)
+                            text.BackgroundTransparency = 1
+                            text.TextStrokeTransparency = 0
+                            text.Font = Enum.Font.SourceSansBold
+                            text.TextSize = 13
+                        end
+                        if bgui and bgui.TextLabel then
+                            bgui.TextLabel.TextColor3 = color
+                            bgui.TextLabel.Text = string.format("%s [%d HP]", player.Name, math.round(phum.Health))
+                        end
+                    elseif bgui then bgui:Destroy() end
+                else
+                    if char:FindFirstChild("SentinelHL") then char.SentinelHL:Destroy() end
+                    if phrp:FindFirstChild("SentinelHP") then phrp.SentinelHP:Destroy() end
+                end
+            end
+        end
+    end
+
+    for i = #CachedMobs, 1, -1 do
+        local obj = CachedMobs[i]
+        if obj and obj.Parent then
+            if obj == myChar or obj == LocalPlayer.Character or obj.Name == LocalPlayer.Name or Players:GetPlayerFromCharacter(obj) then
+                if obj:FindFirstChild("SentinelMobHL") then obj.SentinelMobHL:Destroy() end
+                local badHrp = obj:FindFirstChild("HumanoidRootPart")
+                if badHrp and badHrp:FindFirstChild("SentinelMobHP") then badHrp.SentinelMobHP:Destroy() end
+                table.remove(CachedMobs, i)
+                continue
+            end
+            local mhrp = obj:FindFirstChild("HumanoidRootPart")
+            local mhum = obj:FindFirstChildOfClass("Humanoid")
+            if mhrp and mhum then
+                local distance = (myHrp.Position - mhrp.Position).Magnitude
+                if distance <= Config.MaxDistance and mhum.Health > 0 then
+                    local isBossEntity = isBoss(obj)
+                    local hlToggle = isBossEntity and Config.HighlightBosses or Config.HighlightMobs
+                    local hpToggle = isBossEntity and Config.HealthBosses or Config.HealthMobs
+                    local color = isBossEntity and Config.ColorBosses or Config.ColorMobs
+
+                    local hl = obj:FindFirstChild("SentinelMobHL")
+                    if hlToggle then
+                        if not hl then
+                            hl = Instance.new("Highlight", obj)
+                            hl.Name = "SentinelMobHL"
+                        end
+                        hl.FillColor = color
+                        hl.FillTransparency = Config.HLFillTrans
+                        hl.OutlineTransparency = Config.HLOutlineTrans
+                    elseif hl then hl:Destroy() end
+                    local bgui = mhrp:FindFirstChild("SentinelMobHP")
+                    if hpToggle then
+                        if not bgui then
+                            bgui = Instance.new("BillboardGui", mhrp)
+                            bgui.Name = "SentinelMobHP"
+                            bgui.Size = UDim2.new(0, 150, 0, 30)
+                            bgui.AlwaysOnTop = true
+                            bgui.StudsOffset = Vector3.new(0, 3, 0)
+                            local text = Instance.new("TextLabel", bgui)
+                            text.Size = UDim2.new(1,0,1,0)
+                            text.BackgroundTransparency = 1
+                            text.TextStrokeTransparency = 0
+                            text.Font = Enum.Font.SourceSansBold
+                            text.TextSize = 13
+                        end
+                        if bgui and bgui.TextLabel then
+                            bgui.TextLabel.TextColor3 = color
+                            bgui.TextLabel.Text = string.format("%s [%d HP]", obj.Name, math.round(mhum.Health))
+                        end
+                    elseif bgui then bgui:Destroy() end
+                else
+                    if obj:FindFirstChild("SentinelMobHL") then obj.SentinelMobHL:Destroy() end
+                    if mhrp and mhrp:FindFirstChild("SentinelMobHP") then mhrp.SentinelMobHP:Destroy() end
+                end
+            end
+        else
+            table.remove(CachedMobs, i)
         end
     end
 end)
