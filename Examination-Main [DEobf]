@@ -3303,7 +3303,7 @@ WindUI.Services.SentinelKeyService = {
         end
         
         function copyLink()
-            local link = "https://discord.gg/vTE8NQPsUb"
+            local link = "https://discord.gg/dyQsQVV8ck"
             if setclipboard then
                 setclipboard(link)
             else
